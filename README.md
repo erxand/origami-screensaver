@@ -139,6 +139,8 @@ Press `P` to cycle palettes with a HUD overlay.
 
 ## Roadmap
 
+- [ ] **BUG: Edge triangles show black zigzag borders** — triangles at canvas edges aren't being clipped, leaving black rendering artifacts on left/right edges
+- [ ] **BUG: Fold animation too fast to see** — per-triangle fold completes so quickly it's invisible; the screensaver feels like color swaps rather than paper folding. Need to slow down individual fold duration and make the mid-fold state more visible (wider peak, more dramatic perspective squish)
 - [ ] Variable cascade easing (slow start, fast middle, ease out)
 - [ ] Edge fold behavior (partial fold off-screen at edges)
 - [ ] macOS `.saver` bundle via WKWebView
