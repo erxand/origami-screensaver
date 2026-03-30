@@ -133,16 +133,27 @@ npm run build      # Production build
 | **Ocean** | Navy, teal, seafoam, pale blue | Cool, deep water |
 | **Ember** | Burnt orange, rust, charcoal | Warm, fire |
 
-Palettes cycle automatically. A palette picker UI is planned (press `P` to toggle).
+Press `P` to cycle palettes with a HUD overlay.
 
 ## Roadmap
 
-- [ ] Palette picker overlay (press `P`)
 - [ ] Variable cascade easing (slow start, fast middle, ease out)
-- [ ] Multiple simultaneous cascades
 - [ ] Edge fold behavior (partial fold off-screen at edges)
 - [ ] URL params for config (`?palette=ocean&speed=0.5&size=60`)
 - [ ] macOS `.saver` bundle via WKWebView
+
+## Completed
+
+- ✅ Equilateral triangle grid with full-screen tiling
+- ✅ Fluid fold animation (cubic ease-in-out + spring overshoot)
+- ✅ BFS cascade propagation with smooth per-triangle stagger
+- ✅ Paper texture (pre-generated noise + fiber, multiply composite)
+- ✅ 3 built-in palettes (Sakura, Ocean, Ember)
+- ✅ Palette picker overlay (press `P`)
+- ✅ Multiple simultaneous cascades (up to 2 overlapping waves)
+- ✅ Performance benchmarking (`npm run benchmark`)
+- ✅ Dirty-flag rendering (skip unchanged triangles)
+- ✅ 67 tests across 7 test files
 
 ## License
 
