@@ -11,6 +11,11 @@ function mockCtx() {
     closePath: vi.fn(),
     fill: vi.fn(),
     fillStyle: '',
+    save: vi.fn(),
+    restore: vi.fn(),
+    rect: vi.fn(),
+    clip: vi.fn(),
+    stroke: vi.fn(),
   };
 }
 
@@ -46,8 +51,8 @@ describe('createRenderer', () => {
     const colors = ['#aaa', '#bbb'];
     r.renderFrame(triangles, colors, null);
     expect(ctx.clearRect).toHaveBeenCalledTimes(1);
-    // 2 triangles => 2 beginPath calls
-    expect(ctx.beginPath).toHaveBeenCalledTimes(2);
+    // 2 triangles + 1 clip rect = 3 beginPath calls
+    expect(ctx.beginPath).toHaveBeenCalledTimes(3);
   });
 
   it('renderFrame() uses drawFoldingTriangle for animating triangles', () => {

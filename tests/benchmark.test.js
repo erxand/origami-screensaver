@@ -17,6 +17,8 @@ function mockCtx() {
     fill: vi.fn(),
     save: vi.fn(),
     restore: vi.fn(),
+    rect: vi.fn(),
+    clip: vi.fn(),
     fillStyle: '',
     globalCompositeOperation: 'source-over',
     createPattern: vi.fn(() => null),

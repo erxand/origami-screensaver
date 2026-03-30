@@ -9,7 +9,7 @@ import { createAnimStates, startFold, updateAnim, resetAnim, findFoldEdge, State
 import { buildCascadeSchedule, cascadeDuration } from './cascade.js';
 
 const WAIT_BETWEEN_CASCADES = 8_000; // 8 seconds between cascade waves
-const FOLD_DURATION = 400;
+const FOLD_DURATION = 600; // 600ms — visually substantial fold
 const CASCADE_DELAY = 60;
 const MAX_CONCURRENT_CASCADES = 2; // allow up to 2 simultaneous cascades
 

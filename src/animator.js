@@ -32,11 +32,11 @@ export function createAnimState() {
 /**
  * Start folding a triangle.
  */
-export function startFold(animState, startTime, newColor, oldColor, foldEdgeIdx, duration = 350) {
+export function startFold(animState, startTime, newColor, oldColor, foldEdgeIdx, duration = 600) {
   animState.state = State.FOLDING;
   animState.progress = 0;
   animState.startTime = startTime;
-  animState.duration = duration;
+  animState.duration = Math.max(400, duration); // minimum 400ms for visibility
   animState.oldColor = oldColor;
   animState.newColor = newColor;
   animState.foldEdgeIdx = foldEdgeIdx;

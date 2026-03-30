@@ -103,24 +103,37 @@ export function createRenderer(ctx) {
       const edgeP1 = points[i1];
       const apex = points[i2];
 
-      // Fold axis: the shared edge
-      const axisX = (edgeP0[0] + edgeP1[0]) / 2;
-      const axisY = (edgeP0[1] + edgeP1[1]) / 2;
+      // Reflect apex across the fold edge (not just the midpoint).
+      // This gives the correct landing position for the folded flap.
+      // Project apex onto edge line, then reflect.
+      const ex = edgeP1[0] - edgeP0[0];
+      const ey = edgeP1[1] - edgeP0[1];
+      const edgeLenSq = ex * ex + ey * ey;
+      const t_proj = edgeLenSq > 0
+        ? ((apex[0] - edgeP0[0]) * ex + (apex[1] - edgeP0[1]) * ey) / edgeLenSq
+        : 0;
+      const projX = edgeP0[0] + t_proj * ex;
+      const projY = edgeP0[1] + t_proj * ey;
+      // Reflected apex = 2 * projection − apex
+      const reflApexX = 2 * projX - apex[0];
+      const reflApexY = 2 * projY - apex[1];
 
-      if (progress <= 0.5) {
-        // First half: old color face folding up
-        const t = progress * 2; // 0..1 within first half
-        // Scale the apex toward the fold axis to simulate perspective
-        const scale = 1 - t; // 1 → 0
-        const foldedApexX = axisX + (apex[0] - axisX) * scale;
-        const foldedApexY = axisY + (apex[1] - axisY) * scale;
+      // Clamp progress to valid rendering range (spring overshoot > 1.0 is handled below)
+      const p = Math.min(1.05, Math.max(0, progress));
 
-        // Draw the base (new color revealed underneath)
+      if (p <= 0.5) {
+        // First half: old color face folding up toward the edge
+        const phase = p * 2; // 0..1
+        // Perspective squish: apex moves toward the fold edge line
+        const scale = 1 - phase; // 1 → 0 (apex collapses onto edge)
+        const foldedApexX = projX + (apex[0] - projX) * scale;
+        const foldedApexY = projY + (apex[1] - projY) * scale;
+
+        // Reveal new color underneath
         this.drawTriangle(points, newColor);
 
-        // Draw the folding flap on top
-        if (scale > 0.01) {
-          // darken as it folds
+        // Draw the folding flap
+        if (scale > 0.005) {
           ctx.beginPath();
           ctx.moveTo(edgeP0[0], edgeP0[1]);
           ctx.lineTo(edgeP1[0], edgeP1[1]);
@@ -128,28 +141,33 @@ export function createRenderer(ctx) {
           ctx.closePath();
           ctx.fillStyle = oldColor;
           ctx.fill();
-          // Darken overlay
-          ctx.fillStyle = darkenString(t);
+          // Darken strongly at mid-fold so the crease is visible
+          ctx.fillStyle = darkenString(phase * 0.85);
           ctx.fill();
+          // Paper texture
+          if (paperPattern) {
+            ctx.save();
+            ctx.globalCompositeOperation = 'overlay';
+            ctx.fillStyle = paperPattern;
+            ctx.fill();
+            ctx.restore();
+          }
         }
       } else {
-        // Second half: new color face folding down
-        const t = (progress - 0.5) * 2; // 0..1 within second half
-        const scale = t; // 0 → 1
-
-        // Reflect apex across the fold axis
-        const reflApexX = 2 * axisX - apex[0];
-        const reflApexY = 2 * axisY - apex[1];
-
-        // Interpolate from axis center to reflected position
-        const foldedApexX = axisX + (reflApexX - axisX) * scale;
-        const foldedApexY = axisY + (reflApexY - axisY) * scale;
+        // Second half (+ overshoot): new color face unfolding from edge onto new position
+        const phase = (p - 0.5) * 2; // 0..1 (plus slightly >1 for overshoot)
+        // Spring overshoot: apex goes slightly past reflected position then eases back
+        // When progress > 1.0 we re-map: the animator uses easeWithOvershoot so
+        // progress peaks ~1.03; we clamp phase to ≤1.1 for rendering.
+        const overshootPhase = Math.min(1.1, phase);
+        const foldedApexX = projX + (reflApexX - projX) * overshootPhase;
+        const foldedApexY = projY + (reflApexY - projY) * overshootPhase;
 
         // Draw the base (new color)
         this.drawTriangle(points, newColor);
 
-        // Draw the folding flap (new color, coming down from the other side)
-        if (scale > 0.01) {
+        // Draw the folding flap coming down (new color, fading shadow)
+        if (overshootPhase < 1.0) {
           ctx.beginPath();
           ctx.moveTo(edgeP0[0], edgeP0[1]);
           ctx.lineTo(edgeP1[0], edgeP1[1]);
@@ -157,8 +175,17 @@ export function createRenderer(ctx) {
           ctx.closePath();
           ctx.fillStyle = newColor;
           ctx.fill();
-          ctx.fillStyle = darkenString(1 - t);
+          // Shadow fades as flap lands
+          ctx.fillStyle = darkenString((1 - overshootPhase) * 0.5);
           ctx.fill();
+          // Paper texture
+          if (paperPattern) {
+            ctx.save();
+            ctx.globalCompositeOperation = 'overlay';
+            ctx.fillStyle = paperPattern;
+            ctx.fill();
+            ctx.restore();
+          }
         }
       }
     },
@@ -167,16 +194,26 @@ export function createRenderer(ctx) {
      * Render the full grid. For each triangle, call the appropriate
      * draw method based on its animation state.
      *
+     * Clipped to canvas bounds to prevent edge artifacts from triangles
+     * that extend slightly beyond the viewport.
+     *
      * @param {Array} triangles - Grid triangles
      * @param {Array} colors - Current color per triangle index
      * @param {Array} animStates - Animation states (null or { progress, oldColor, newColor, foldEdgeIdx })
      */
     renderFrame(triangles, colors, animStates) {
       this.clear();
+      // Clip to canvas logical bounds — prevents black zigzag artifacts on edges
+      // from triangles that extend slightly beyond the viewport.
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(0, 0, ctx.canvas.clientWidth || ctx.canvas.width, ctx.canvas.clientHeight || ctx.canvas.height);
+      ctx.clip();
       for (let i = 0; i < triangles.length; i++) {
         const tri = triangles[i];
         const anim = animStates ? animStates[i] : null;
-        if (anim && anim.progress > 0 && anim.progress < 1) {
+        // Allow progress up to 1.15 so the spring overshoot is visible
+        if (anim && anim.progress > 0 && anim.progress < 1.15) {
           this.drawFoldingTriangle(
             tri.points,
             anim.oldColor,
@@ -188,6 +225,7 @@ export function createRenderer(ctx) {
           this.drawTriangle(tri.points, colors[i]);
         }
       }
+      ctx.restore();
     },
   };
 }
