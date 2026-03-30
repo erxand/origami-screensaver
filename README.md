@@ -139,7 +139,6 @@ Press `P` to cycle palettes with a HUD overlay.
 
 ## Roadmap
 
-- [ ] **Paper texture depth** — triangles look flat/digital, need to feel like real folded paper like Kami 2. Look at Kami 2 screenshots for reference. Ideas: subtle gradient shading per triangle (lighter near fold edge, darker toward opposite vertex), soft drop shadow between adjacent triangles to create depth/separation, fiber grain that follows the triangle orientation rather than being uniform noise, slightly uneven edges (hand-torn paper feel). Should feel tactile, not like colored polygons.
 - [ ] Variable cascade easing (slow start, fast middle, ease out)
 - [ ] Edge fold behavior (partial fold off-screen at edges)
 - [ ] macOS `.saver` bundle via WKWebView
@@ -149,7 +148,8 @@ Press `P` to cycle palettes with a HUD overlay.
 - ✅ Equilateral triangle grid with full-screen tiling
 - ✅ Fluid fold animation (cubic ease-in-out + spring overshoot)
 - ✅ BFS cascade propagation with smooth per-triangle stagger
-- ✅ Paper texture (pre-generated noise + fiber, multiply composite)
+- ✅ Paper texture (pre-generated noise + multi-angle fibers matching equilateral grain)
+- ✅ **Paper depth shading** — diagonal gradient (light upper-left → dark lower-right) + thin crease stroke per triangle for tactile 3D feel
 - ✅ 3 built-in palettes (Sakura, Ocean, Ember)
 - ✅ Palette picker overlay (press `P`)
 - ✅ Multiple simultaneous cascades (up to 2 overlapping waves)

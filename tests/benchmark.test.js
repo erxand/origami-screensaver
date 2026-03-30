@@ -22,6 +22,12 @@ function mockCtx() {
     fillStyle: '',
     globalCompositeOperation: 'source-over',
     createPattern: vi.fn(() => null),
+    stroke: vi.fn(),
+    strokeStyle: '',
+    lineWidth: 1,
+    createLinearGradient: vi.fn(() => ({
+      addColorStop: vi.fn(),
+    })),
   };
 }
 

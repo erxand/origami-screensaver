@@ -1,6 +1,11 @@
 /**
  * Canvas renderer — draws triangles with their current colors.
  * Supports flat rendering and fold-in-progress rendering.
+ *
+ * Visual depth techniques:
+ *  - Per-triangle diagonal gradient (light upper-left → dark lower-right) → folded-paper shading
+ *  - Thin semi-transparent edge stroke → crease / separation between triangles
+ *  - Paper texture: noise grain + multi-angle fibers (0°, 30°, -30°) matching equilateral grain
  */
 
 // Pre-compute darken overlay strings to avoid per-frame string allocation
@@ -17,43 +22,113 @@ function darkenString(t) {
 }
 
 /**
+ * Generate the paper texture canvas once at startup.
+ * Returns an offscreen canvas with noise grain + multi-angle fibers.
+ */
+function generatePaperTexture() {
+  const SIZE = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = SIZE;
+  canvas.height = SIZE;
+  const pctx = canvas.getContext('2d');
+
+  // Layer 1: random grain dots at low opacity
+  for (let i = 0; i < 800; i++) {
+    const x = Math.random() * SIZE;
+    const y = Math.random() * SIZE;
+    const opacity = 0.025 + Math.random() * 0.045; // 0.025–0.07
+    pctx.fillStyle = `rgba(255,255,255,${opacity})`;
+    pctx.fillRect(x, y, 1, 1);
+  }
+
+  // Layer 2: fibers at three angles — 0°, 30°, -30° — matching equilateral triangle grain
+  const fiberAngles = [0, Math.PI / 6, -Math.PI / 6]; // 0°, 30°, -30°
+  for (const angle of fiberAngles) {
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    const count = angle === 0 ? 30 : 18; // more horizontal fibers
+    for (let i = 0; i < count; i++) {
+      // Start from a random point; travel along the fiber direction across the canvas
+      const sx = Math.random() * SIZE;
+      const sy = Math.random() * SIZE;
+      const len = SIZE * (0.4 + Math.random() * 0.6);
+      const opacity = 0.012 + Math.random() * 0.018; // very subtle
+      pctx.strokeStyle = `rgba(255,255,255,${opacity})`;
+      pctx.lineWidth = 0.4 + Math.random() * 0.4;
+      pctx.beginPath();
+      pctx.moveTo(sx, sy);
+      // Small random perpendicular drift for organic feel
+      const drift = (Math.random() - 0.5) * 1.5;
+      pctx.lineTo(
+        sx + cos * len - sin * drift,
+        sy + sin * len + cos * drift
+      );
+      pctx.stroke();
+    }
+  }
+
+  return canvas;
+}
+
+/**
  * Create a renderer bound to a canvas context.
  */
 export function createRenderer(ctx) {
-  // Pre-create a subtle paper texture pattern (Kami-style grain + fiber)
+  // Pre-create paper texture pattern once at startup
   let paperPattern = null;
   try {
-    const patternCanvas = document.createElement('canvas');
-    const SIZE = 256;
-    patternCanvas.width = SIZE;
-    patternCanvas.height = SIZE;
-    const pctx = patternCanvas.getContext('2d');
-
-    // Layer 1: random grain dots at low opacity
-    for (let i = 0; i < 600; i++) {
-      const x = Math.random() * SIZE;
-      const y = Math.random() * SIZE;
-      const opacity = 0.03 + Math.random() * 0.05; // 0.03-0.08
-      pctx.fillStyle = `rgba(255,255,255,${opacity})`;
-      pctx.fillRect(x, y, 1, 1);
-    }
-
-    // Layer 2: subtle horizontal fiber lines
-    pctx.strokeStyle = 'rgba(255,255,255,0.02)';
-    pctx.lineWidth = 0.5;
-    for (let i = 0; i < 40; i++) {
-      const y = Math.random() * SIZE;
-      const xStart = Math.random() * SIZE * 0.3;
-      const xEnd = xStart + SIZE * 0.3 + Math.random() * SIZE * 0.4;
-      pctx.beginPath();
-      pctx.moveTo(xStart, y);
-      pctx.lineTo(xEnd, y + (Math.random() - 0.5) * 2);
-      pctx.stroke();
-    }
-
-    paperPattern = ctx.createPattern(patternCanvas, 'repeat');
+    const textureCanvas = generatePaperTexture();
+    paperPattern = ctx.createPattern(textureCanvas, 'repeat');
   } catch (_) {
     // In test environments, document may not exist
+  }
+
+  /**
+   * Trace the triangle path (shared between fill passes).
+   */
+  function tracePath(points) {
+    ctx.beginPath();
+    ctx.moveTo(points[0][0], points[0][1]);
+    ctx.lineTo(points[1][0], points[1][1]);
+    ctx.lineTo(points[2][0], points[2][1]);
+    ctx.closePath();
+  }
+
+  /**
+   * Apply depth shading + edge crease to an already-traced path.
+   * The path must be active (no new beginPath called after tracePath).
+   * @param {Array} points - Triangle vertices
+   */
+  function applyDepthShading(points) {
+    // Bounding box for gradient endpoints
+    const x0 = Math.min(points[0][0], points[1][0], points[2][0]);
+    const y0 = Math.min(points[0][1], points[1][1], points[2][1]);
+    const x1 = Math.max(points[0][0], points[1][0], points[2][0]);
+    const y1 = Math.max(points[0][1], points[1][1], points[2][1]);
+
+    // Diagonal gradient: light upper-left → darker lower-right
+    // Simulates a light source from upper-left, giving paper a folded depth feel.
+    const grad = ctx.createLinearGradient(x0, y0, x1, y1);
+    grad.addColorStop(0, 'rgba(255,255,255,0.11)');
+    grad.addColorStop(0.5, 'rgba(255,255,255,0.00)');
+    grad.addColorStop(1, 'rgba(0,0,0,0.09)');
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    // Paper texture overlay
+    if (paperPattern) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'overlay';
+      ctx.fillStyle = paperPattern;
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // Thin crease stroke — creates visual separation between adjacent triangles
+    // Very low opacity so it reads as a fold line, not a hard border
+    ctx.strokeStyle = 'rgba(0,0,0,0.09)';
+    ctx.lineWidth = 0.7;
+    ctx.stroke();
   }
 
   return {
@@ -64,23 +139,12 @@ export function createRenderer(ctx) {
       ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
     },
 
-    /** Draw a single triangle filled with the given color, with paper texture. */
+    /** Draw a single triangle filled with the given color, with paper depth shading. */
     drawTriangle(points, color) {
-      ctx.beginPath();
-      ctx.moveTo(points[0][0], points[0][1]);
-      ctx.lineTo(points[1][0], points[1][1]);
-      ctx.lineTo(points[2][0], points[2][1]);
-      ctx.closePath();
+      tracePath(points);
       ctx.fillStyle = color;
       ctx.fill();
-      // Paper texture overlay with multiply compositing
-      if (paperPattern) {
-        ctx.save();
-        ctx.globalCompositeOperation = 'overlay';
-        ctx.fillStyle = paperPattern;
-        ctx.fill();
-        ctx.restore();
-      }
+      applyDepthShading(points);
     },
 
     /**
@@ -105,7 +169,6 @@ export function createRenderer(ctx) {
 
       // Reflect apex across the fold edge (not just the midpoint).
       // This gives the correct landing position for the folded flap.
-      // Project apex onto edge line, then reflect.
       const ex = edgeP1[0] - edgeP0[0];
       const ey = edgeP1[1] - edgeP0[1];
       const edgeLenSq = ex * ex + ey * ey;
@@ -114,17 +177,14 @@ export function createRenderer(ctx) {
         : 0;
       const projX = edgeP0[0] + t_proj * ex;
       const projY = edgeP0[1] + t_proj * ey;
-      // Reflected apex = 2 * projection − apex
       const reflApexX = 2 * projX - apex[0];
       const reflApexY = 2 * projY - apex[1];
 
-      // Clamp progress to valid rendering range (spring overshoot > 1.0 is handled below)
       const p = Math.min(1.05, Math.max(0, progress));
 
       if (p <= 0.5) {
         // First half: old color face folding up toward the edge
         const phase = p * 2; // 0..1
-        // Perspective squish: apex moves toward the fold edge line
         const scale = 1 - phase; // 1 → 0 (apex collapses onto edge)
         const foldedApexX = projX + (apex[0] - projX) * scale;
         const foldedApexY = projY + (apex[1] - projY) * scale;
@@ -144,21 +204,12 @@ export function createRenderer(ctx) {
           // Darken strongly at mid-fold so the crease is visible
           ctx.fillStyle = darkenString(phase * 0.85);
           ctx.fill();
-          // Paper texture
-          if (paperPattern) {
-            ctx.save();
-            ctx.globalCompositeOperation = 'overlay';
-            ctx.fillStyle = paperPattern;
-            ctx.fill();
-            ctx.restore();
-          }
+          // Depth shading on the flap
+          applyDepthShading([edgeP0, edgeP1, [foldedApexX, foldedApexY]]);
         }
       } else {
         // Second half (+ overshoot): new color face unfolding from edge onto new position
         const phase = (p - 0.5) * 2; // 0..1 (plus slightly >1 for overshoot)
-        // Spring overshoot: apex goes slightly past reflected position then eases back
-        // When progress > 1.0 we re-map: the animator uses easeWithOvershoot so
-        // progress peaks ~1.03; we clamp phase to ≤1.1 for rendering.
         const overshootPhase = Math.min(1.1, phase);
         const foldedApexX = projX + (reflApexX - projX) * overshootPhase;
         const foldedApexY = projY + (reflApexY - projY) * overshootPhase;
@@ -178,14 +229,7 @@ export function createRenderer(ctx) {
           // Shadow fades as flap lands
           ctx.fillStyle = darkenString((1 - overshootPhase) * 0.5);
           ctx.fill();
-          // Paper texture
-          if (paperPattern) {
-            ctx.save();
-            ctx.globalCompositeOperation = 'overlay';
-            ctx.fillStyle = paperPattern;
-            ctx.fill();
-            ctx.restore();
-          }
+          applyDepthShading([edgeP0, edgeP1, [foldedApexX, foldedApexY]]);
         }
       }
     },
@@ -204,7 +248,6 @@ export function createRenderer(ctx) {
     renderFrame(triangles, colors, animStates) {
       this.clear();
       // Clip to canvas logical bounds — prevents black zigzag artifacts on edges
-      // from triangles that extend slightly beyond the viewport.
       ctx.save();
       ctx.beginPath();
       ctx.rect(0, 0, ctx.canvas.clientWidth || ctx.canvas.width, ctx.canvas.clientHeight || ctx.canvas.height);
