@@ -12,14 +12,29 @@ const WAIT_BETWEEN_CASCADES = 30_000; // 30 seconds
 const FOLD_DURATION = 350;
 const CASCADE_DELAY = 60;
 
+/**
+ * Compute responsive triangle side length based on viewport.
+ * Targets roughly 800-1500 triangles for good visual density.
+ */
+export function responsiveSide(width, height) {
+  const area = width * height;
+  // Each equilateral triangle with side s has area ≈ s²·√3/4
+  // We want ~1000 triangles: s = sqrt(area * √3 / (4 * 1000))
+  const targetCount = 1000;
+  const s = Math.sqrt((area * Math.sqrt(3)) / (4 * targetCount));
+  return Math.max(40, Math.min(100, Math.round(s)));
+}
+
 export function createScreensaver(canvas, options = {}) {
-  const side = options.side || 70;
+  const fixedSide = options.side || 0; // 0 = responsive
   const waitTime = options.waitTime ?? WAIT_BETWEEN_CASCADES;
   const foldDuration = options.foldDuration ?? FOLD_DURATION;
   const cascadeDelay = options.cascadeDelay ?? CASCADE_DELAY;
 
   let ctx = canvas.getContext('2d');
   let grid, adjacency, renderer, animStates, colors;
+  // Pre-allocated render state array to avoid per-frame allocations
+  let renderAnims = [];
   let cycler = createPaletteCycler(0);
   let currentColor = cycler.currentColor();
 
@@ -32,15 +47,18 @@ export function createScreensaver(canvas, options = {}) {
   let running = false;
 
   function initGrid() {
-    canvas.width = canvas.clientWidth * (window.devicePixelRatio || 1);
-    canvas.height = canvas.clientHeight * (window.devicePixelRatio || 1);
-    ctx.setTransform(window.devicePixelRatio || 1, 0, 0, window.devicePixelRatio || 1, 0, 0);
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = canvas.clientWidth * dpr;
+    canvas.height = canvas.clientHeight * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
+    const side = fixedSide || responsiveSide(canvas.clientWidth, canvas.clientHeight);
     grid = createGrid(canvas.clientWidth, canvas.clientHeight, side);
     adjacency = buildAdjacency(grid.rows, grid.cols);
     renderer = createRenderer(ctx);
     animStates = createAnimStates(grid.triangles.length);
     colors = new Array(grid.triangles.length).fill(currentColor);
+    renderAnims = new Array(grid.triangles.length).fill(null);
   }
 
   function startCascade(now) {
@@ -106,18 +124,19 @@ export function createScreensaver(canvas, options = {}) {
       }
     }
 
-    // Build render-friendly anim state array
-    const renderAnims = animStates.map(a => {
+    // Update render-friendly anim state array (reuse to avoid allocations)
+    for (let i = 0; i < animStates.length; i++) {
+      const a = animStates[i];
       if (a.state === State.FOLDING) {
-        return {
-          progress: a.progress,
-          oldColor: a.oldColor,
-          newColor: a.newColor,
-          foldEdgeIdx: a.foldEdgeIdx,
-        };
+        if (!renderAnims[i]) renderAnims[i] = {};
+        renderAnims[i].progress = a.progress;
+        renderAnims[i].oldColor = a.oldColor;
+        renderAnims[i].newColor = a.newColor;
+        renderAnims[i].foldEdgeIdx = a.foldEdgeIdx;
+      } else {
+        renderAnims[i] = null;
       }
-      return null;
-    });
+    }
 
     renderer.renderFrame(grid.triangles, colors, renderAnims);
     animFrameId = requestAnimationFrame(tick);

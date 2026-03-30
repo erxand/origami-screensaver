@@ -7,6 +7,25 @@
  * Create a renderer bound to a canvas context.
  */
 export function createRenderer(ctx) {
+  // Pre-create a subtle paper texture pattern
+  let paperPattern = null;
+  try {
+    const patternCanvas = document.createElement('canvas');
+    patternCanvas.width = 64;
+    patternCanvas.height = 64;
+    const pctx = patternCanvas.getContext('2d');
+    pctx.fillStyle = 'rgba(255,255,255,0.03)';
+    // Scatter tiny dots for a paper-fiber look
+    for (let i = 0; i < 80; i++) {
+      const x = Math.random() * 64;
+      const y = Math.random() * 64;
+      pctx.fillRect(x, y, 1, 1);
+    }
+    paperPattern = ctx.createPattern(patternCanvas, 'repeat');
+  } catch (_) {
+    // In test environments, document may not exist
+  }
+
   return {
     ctx,
 
@@ -15,7 +34,7 @@ export function createRenderer(ctx) {
       ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
     },
 
-    /** Draw a single triangle filled with the given color. */
+    /** Draw a single triangle filled with the given color, with paper texture. */
     drawTriangle(points, color) {
       ctx.beginPath();
       ctx.moveTo(points[0][0], points[0][1]);
@@ -24,6 +43,11 @@ export function createRenderer(ctx) {
       ctx.closePath();
       ctx.fillStyle = color;
       ctx.fill();
+      // Paper texture overlay
+      if (paperPattern) {
+        ctx.fillStyle = paperPattern;
+        ctx.fill();
+      }
     },
 
     /**
