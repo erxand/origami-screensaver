@@ -2,8 +2,11 @@
  * Cascade engine — BFS flood-fill propagation from an origin triangle.
  *
  * Computes the schedule of when each triangle should start folding,
- * based on BFS distance from the origin.
+ * based on BFS distance from the origin. Uses variable cascade easing
+ * (ease-in-out cubic on the wave timing) for a more organic ripple feel.
  */
+
+import { applyVariableCascadeEasing } from './easing.js';
 
 /**
  * Run BFS from originIdx and return an array of { index, distance, parentIdx }
@@ -44,21 +47,22 @@ export function bfs(originIdx, adjacency) {
  * Build a cascade schedule: for each triangle, compute the start time
  * of its fold animation.
  *
+ * Uses variable cascade easing (ease-in-out cubic) so the wave starts slow
+ * near the origin, accelerates through the bulk, then gracefully decelerates
+ * at the edges — for a cinematic, organic ripple feel.
+ *
  * @param {number} originIdx - Starting triangle
  * @param {Array<Array<number>>} adjacency - Adjacency list
- * @param {number} cascadeDelay - Delay per BFS hop (ms)
+ * @param {number} cascadeDelay - Delay per BFS hop (ms); also used to derive total duration
  * @returns {Array<{index: number, startTime: number, parentIdx: number}>}
  */
 export function buildCascadeSchedule(originIdx, adjacency, cascadeDelay = 60) {
   const bfsResult = bfs(originIdx, adjacency);
-  // Add per-triangle jitter (up to 40% of cascadeDelay) to break discrete BFS waves
-  // and create a smooth, organic ripple effect.
-  const jitterRange = cascadeDelay * 0.4;
-  return bfsResult.map(({ index, distance, parentIdx }) => ({
-    index,
-    startTime: distance * cascadeDelay + (distance > 0 ? Math.random() * jitterRange : 0),
-    parentIdx,
-  }));
+  const maxDist = bfsResult.length > 0 ? bfsResult[bfsResult.length - 1].distance : 0;
+  // totalDuration: same wall-clock spread as before (maxDist * cascadeDelay),
+  // but distributed through an ease-in-out curve instead of linearly.
+  const totalDuration = maxDist * cascadeDelay;
+  return applyVariableCascadeEasing(bfsResult, totalDuration, 0.35);
 }
 
 /**

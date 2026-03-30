@@ -24,11 +24,20 @@ function mockCtx(width = 1920, height = 1080) {
     lineTo() {},
     closePath() {},
     fill() {},
+    stroke() {},
+    rect() {},
+    clip() {},
     save() {},
     restore() {},
     fillStyle: '',
+    strokeStyle: '',
+    lineWidth: 1,
+    globalAlpha: 1,
     globalCompositeOperation: 'source-over',
     createPattern() { return null; },
+    createLinearGradient() {
+      return { addColorStop() {} };
+    },
   };
 }
 
