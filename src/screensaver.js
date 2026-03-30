@@ -15,29 +15,34 @@ const MAX_CONCURRENT_CASCADES = 2; // allow up to 2 simultaneous cascades
 
 /**
  * Compute responsive triangle side length based on viewport.
- * Targets roughly 800-1500 triangles for good visual density.
+ * Targets roughly `targetCount` triangles for good visual density.
+ *
+ * @param {number} width
+ * @param {number} height
+ * @param {number} [targetCount=1000]
  */
-export function responsiveSide(width, height) {
+export function responsiveSide(width, height, targetCount = 1000) {
   const area = width * height;
   // Each equilateral triangle with side s has area ≈ s²·√3/4
-  // We want ~1000 triangles: s = sqrt(area * √3 / (4 * 1000))
-  const targetCount = 1000;
+  // s = sqrt(area * √3 / (4 * targetCount))
   const s = Math.sqrt((area * Math.sqrt(3)) / (4 * targetCount));
   return Math.max(40, Math.min(100, Math.round(s)));
 }
 
 export function createScreensaver(canvas, options = {}) {
   const fixedSide = options.side || 0; // 0 = responsive
+  const targetDensity = options.density ?? 1000; // target triangle count for auto-size
   const waitTime = options.waitTime ?? WAIT_BETWEEN_CASCADES;
   const foldDuration = options.foldDuration ?? FOLD_DURATION;
   const cascadeDelay = options.cascadeDelay ?? CASCADE_DELAY;
   const maxConcurrent = options.maxConcurrent ?? MAX_CONCURRENT_CASCADES;
+  const startPaletteIdx = options.paletteIdx ?? 0;
 
   let ctx = canvas.getContext('2d');
   let grid, adjacency, renderer, animStates, colors;
   // Pre-allocated render state array to avoid per-frame allocations
   let renderAnims = [];
-  let cycler = createPaletteCycler(0);
+  let cycler = createPaletteCycler(startPaletteIdx);
   let currentColor = cycler.currentColor();
 
   // Multiple cascade support: track active cascade slots
@@ -57,7 +62,7 @@ export function createScreensaver(canvas, options = {}) {
     canvas.height = canvas.clientHeight * dpr;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    const side = fixedSide || responsiveSide(canvas.clientWidth, canvas.clientHeight);
+    const side = fixedSide || responsiveSide(canvas.clientWidth, canvas.clientHeight, targetDensity);
     grid = createGrid(canvas.clientWidth, canvas.clientHeight, side);
     adjacency = buildAdjacency(grid.rows, grid.cols);
     renderer = createRenderer(ctx);

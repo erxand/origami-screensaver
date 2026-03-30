@@ -34,8 +34,9 @@ src/
 ├── animator.js     — Per-triangle fold state machine (IDLE → FOLDING → DONE)
 ├── cascade.js      — Cascade engine: BFS propagation, timing schedule
 ├── palette.js      — Color palettes (sakura, ocean, ember) + cycling
+├── config.js       — URL param parser: ?palette=ocean&speed=2&size=60 etc.
 ├── screensaver.js  — Main orchestrator: wait → cascade → wait → repeat
-└── main.js         — Entry point: canvas setup, resize handling
+└── main.js         — Entry point: canvas setup, resize handling, URL config
 ```
 
 ### Triangle Grid
@@ -105,7 +106,7 @@ npm run benchmark
 
 ```bash
 npm run dev        # Start dev server (hot reload)
-npm test           # Run test suite (67 tests)
+npm test           # Run test suite (93 tests)
 npm run test:watch # Watch mode
 npm run benchmark  # Performance report
 npm run build      # Production build
@@ -113,17 +114,18 @@ npm run build      # Production build
 
 ## Tests
 
-67 tests across 7 test files:
+93 tests across 8 test files:
 
 | File | Tests | Covers |
 |------|-------|--------|
 | `grid.test.js` | 16 | Geometry, neighbor lookup, full coverage |
-| `animator.test.js` | 14 | State machine, easing, spring overshoot |
+| `animator.test.js` | 12 | State machine, easing, spring overshoot |
 | `cascade.test.js` | 9 | BFS correctness, timing schedule |
-| `palette.test.js` | 9 | Palette structure, color validation, cycling |
+| `palette.test.js` | 11 | Palette structure, color validation, cycling |
 | `renderer.test.js` | 6 | Draw calls, dirty flags (mock canvas) |
-| `benchmark.test.js` | 7 | Benchmark harness correctness |
-| `screensaver.test.js` | 6 | Orchestrator loop, state transitions |
+| `easing.test.js` | 11 | Easing function correctness |
+| `benchmark.test.js` | 4 | Benchmark harness correctness |
+| `config.test.js` | 24 | URL param parsing, validation, round-trip |
 
 ## Color Palettes
 
@@ -139,7 +141,6 @@ Press `P` to cycle palettes with a HUD overlay.
 
 - [ ] Variable cascade easing (slow start, fast middle, ease out)
 - [ ] Edge fold behavior (partial fold off-screen at edges)
-- [ ] URL params for config (`?palette=ocean&speed=0.5&size=60`)
 - [ ] macOS `.saver` bundle via WKWebView
 
 ## Completed
@@ -153,7 +154,8 @@ Press `P` to cycle palettes with a HUD overlay.
 - ✅ Multiple simultaneous cascades (up to 2 overlapping waves)
 - ✅ Performance benchmarking (`npm run benchmark`)
 - ✅ Dirty-flag rendering (skip unchanged triangles)
-- ✅ 67 tests across 7 test files
+- ✅ URL params config (`?palette=ocean&speed=2&size=60&density=1000&cascades=2&wait=8000`)
+- ✅ 93 tests across 8 test files
 
 ## License
 
