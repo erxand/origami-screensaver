@@ -9,7 +9,7 @@ import { createAnimStates, startFold, updateAnim, resetAnim, findFoldEdge, State
 import { buildCascadeSchedule, cascadeDuration } from './cascade.js';
 
 const WAIT_BETWEEN_CASCADES = 30_000; // 30 seconds
-const FOLD_DURATION = 350;
+const FOLD_DURATION = 400;
 const CASCADE_DELAY = 60;
 
 /**

@@ -6,6 +6,8 @@
  * Each triangle has an AnimState that tracks its fold progress.
  */
 
+import { easeWithOvershoot } from './easing.js';
+
 export const State = {
   IDLE: 'IDLE',
   FOLDING: 'FOLDING',
@@ -54,7 +56,8 @@ export function updateAnim(animState, now) {
     return true;
   }
 
-  animState.progress = elapsed / animState.duration;
+  const linear = elapsed / animState.duration;
+  animState.progress = easeWithOvershoot(linear);
   return false;
 }
 

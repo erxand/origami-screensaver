@@ -51,9 +51,12 @@ export function bfs(originIdx, adjacency) {
  */
 export function buildCascadeSchedule(originIdx, adjacency, cascadeDelay = 60) {
   const bfsResult = bfs(originIdx, adjacency);
+  // Add per-triangle jitter (up to 40% of cascadeDelay) to break discrete BFS waves
+  // and create a smooth, organic ripple effect.
+  const jitterRange = cascadeDelay * 0.4;
   return bfsResult.map(({ index, distance, parentIdx }) => ({
     index,
-    startTime: distance * cascadeDelay,
+    startTime: distance * cascadeDelay + (distance > 0 ? Math.random() * jitterRange : 0),
     parentIdx,
   }));
 }

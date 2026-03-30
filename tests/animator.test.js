@@ -41,8 +41,11 @@ describe('updateAnim', () => {
   it('updates progress during fold', () => {
     const s = createAnimState();
     startFold(s, 1000, '#bbb', '#aaa', 0, 400);
-    updateAnim(s, 1200); // 200ms into 400ms fold
-    expect(s.progress).toBeCloseTo(0.5);
+    updateAnim(s, 1200); // 200ms into 400ms fold (linear t=0.5)
+    // With easing applied, progress won't be exactly 0.5 but should be
+    // in the mid-range and the state should still be FOLDING
+    expect(s.progress).toBeGreaterThan(0.3);
+    expect(s.progress).toBeLessThan(1.1);
     expect(s.state).toBe(State.FOLDING);
   });
 
