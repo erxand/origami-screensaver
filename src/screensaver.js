@@ -8,9 +8,10 @@ import { createPaletteCycler } from './palette.js';
 import { createAnimStates, startFold, updateAnim, resetAnim, findFoldEdge, State } from './animator.js';
 import { buildCascadeSchedule, cascadeDuration } from './cascade.js';
 
-const WAIT_BETWEEN_CASCADES = 30_000; // 30 seconds
+const WAIT_BETWEEN_CASCADES = 8_000; // 8 seconds between cascade waves
 const FOLD_DURATION = 400;
 const CASCADE_DELAY = 60;
+const MAX_CONCURRENT_CASCADES = 2; // allow up to 2 simultaneous cascades
 
 /**
  * Compute responsive triangle side length based on viewport.
@@ -30,6 +31,7 @@ export function createScreensaver(canvas, options = {}) {
   const waitTime = options.waitTime ?? WAIT_BETWEEN_CASCADES;
   const foldDuration = options.foldDuration ?? FOLD_DURATION;
   const cascadeDelay = options.cascadeDelay ?? CASCADE_DELAY;
+  const maxConcurrent = options.maxConcurrent ?? MAX_CONCURRENT_CASCADES;
 
   let ctx = canvas.getContext('2d');
   let grid, adjacency, renderer, animStates, colors;
@@ -38,13 +40,16 @@ export function createScreensaver(canvas, options = {}) {
   let cycler = createPaletteCycler(0);
   let currentColor = cycler.currentColor();
 
-  // Cascade state
-  let schedule = null;
-  let cascadeStartTime = 0;
-  let cascading = false;
+  // Multiple cascade support: track active cascade slots
+  // Each slot: { schedule, startTime, newColor, active }
+  let activeCascades = [];
   let waitingUntil = 0;
   let animFrameId = null;
   let running = false;
+
+  // Palette picker state
+  let paletteOverlayTimer = 0;
+  let paletteOverlayText = '';
 
   function initGrid() {
     const dpr = window.devicePixelRatio || 1;
@@ -59,15 +64,22 @@ export function createScreensaver(canvas, options = {}) {
     animStates = createAnimStates(grid.triangles.length);
     colors = new Array(grid.triangles.length).fill(currentColor);
     renderAnims = new Array(grid.triangles.length).fill(null);
+    activeCascades = [];
   }
 
-  function startCascade(now) {
-    const newColor = cycler.nextColor();
-    const originIdx = Math.floor(Math.random() * grid.triangles.length);
-    schedule = buildCascadeSchedule(originIdx, adjacency, cascadeDelay);
+  function startCascade(now, forcedColor) {
+    if (activeCascades.length >= maxConcurrent) return;
 
-    // Start folds with correct edge indices
+    const newColor = forcedColor || cycler.nextColor();
+    const originIdx = Math.floor(Math.random() * grid.triangles.length);
+    const schedule = buildCascadeSchedule(originIdx, adjacency, cascadeDelay);
+
+    // Only start folds for triangles not currently mid-fold
     for (const entry of schedule) {
+      const anim = animStates[entry.index];
+      // Don't restart a triangle that's actively folding
+      if (anim.state === State.FOLDING) continue;
+
       const tri = grid.triangles[entry.index];
       let foldEdgeIdx = 0;
       if (entry.parentIdx >= 0) {
@@ -75,7 +87,7 @@ export function createScreensaver(canvas, options = {}) {
         foldEdgeIdx = findFoldEdge(tri, parentTri);
       }
       startFold(
-        animStates[entry.index],
+        anim,
         now + entry.startTime,
         newColor,
         colors[entry.index],
@@ -84,47 +96,62 @@ export function createScreensaver(canvas, options = {}) {
       );
     }
 
-    cascadeStartTime = now;
-    cascading = true;
+    activeCascades.push({ schedule, startTime: now, newColor, active: true });
     currentColor = newColor;
+  }
+
+  /**
+   * Switch to the next palette immediately — triggers a new cascade with palette colors.
+   */
+  function switchPalette() {
+    cycler.nextPalette();
+    const paletteName = cycler.currentPaletteName();
+    paletteOverlayText = `Palette: ${paletteName}`;
+    paletteOverlayTimer = 2500; // show for 2.5 seconds
+
+    // Immediately trigger a new cascade with the new palette
+    if (running && grid) {
+      const now = performance.now();
+      // Force a cascade even if at max concurrent (bump oldest)
+      if (activeCascades.length >= maxConcurrent) {
+        activeCascades.shift();
+      }
+      startCascade(now, cycler.currentColor());
+      waitingUntil = now + waitTime;
+    }
   }
 
   function tick(now) {
     if (!running) return;
 
-    if (!cascading && now >= waitingUntil) {
+    // Prune completed cascades
+    activeCascades = activeCascades.filter(cascade => {
+      const maxStart = cascade.schedule.reduce((m, e) => Math.max(m, e.startTime), 0);
+      const endTime = cascade.startTime + maxStart + foldDuration + 50;
+      return now < endTime;
+    });
+
+    // Start new cascade if under limit and wait has elapsed
+    if (activeCascades.length < maxConcurrent && now >= waitingUntil) {
       startCascade(now);
+      // Stagger next cascade a bit (half wait if concurrent mode)
+      const nextWait = activeCascades.length >= maxConcurrent ? waitTime * 0.5 : waitTime;
+      waitingUntil = now + nextWait;
     }
 
-    if (cascading) {
-      let allDone = true;
-      for (let i = 0; i < animStates.length; i++) {
-        const anim = animStates[i];
-        if (anim.state === State.FOLDING) {
-          const done = updateAnim(anim, now);
-          if (done) {
-            colors[i] = anim.newColor;
-          } else {
-            allDone = false;
-          }
-        } else if (anim.state === State.IDLE) {
-          // Not yet started (scheduled for future)
-          allDone = false;
-        }
-      }
-
-      if (allDone) {
-        // All triangles done — reset and wait
-        for (const anim of animStates) {
+    // Update all animating triangles
+    for (let i = 0; i < animStates.length; i++) {
+      const anim = animStates[i];
+      if (anim.state === State.FOLDING) {
+        const done = updateAnim(anim, now);
+        if (done) {
+          colors[i] = anim.newColor;
           resetAnim(anim);
         }
-        cascading = false;
-        schedule = null;
-        waitingUntil = now + waitTime;
       }
     }
 
-    // Update render-friendly anim state array (reuse to avoid allocations)
+    // Build render-friendly anim state array (reuse to avoid allocations)
     for (let i = 0; i < animStates.length; i++) {
       const a = animStates[i];
       if (a.state === State.FOLDING) {
@@ -139,7 +166,36 @@ export function createScreensaver(canvas, options = {}) {
     }
 
     renderer.renderFrame(grid.triangles, colors, renderAnims);
+
+    // Draw palette overlay if active
+    if (paletteOverlayTimer > 0) {
+      drawPaletteOverlay(paletteOverlayText);
+      paletteOverlayTimer -= 16; // rough 60fps decrement
+    }
+
     animFrameId = requestAnimationFrame(tick);
+  }
+
+  function drawPaletteOverlay(text) {
+    const alpha = Math.min(1, paletteOverlayTimer / 400); // fade out in last 400ms
+    ctx.save();
+    ctx.globalAlpha = alpha * 0.85;
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.font = 'bold 18px system-ui, sans-serif';
+    const metrics = ctx.measureText(text);
+    const padX = 16, padY = 10;
+    const w = metrics.width + padX * 2;
+    const h = 36;
+    const x = (canvas.clientWidth - w) / 2;
+    const y = canvas.clientHeight - 60;
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, 8);
+    ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, canvas.clientWidth / 2, y + h / 2);
+    ctx.restore();
   }
 
   return {
@@ -165,9 +221,10 @@ export function createScreensaver(canvas, options = {}) {
       const prevColor = currentColor;
       initGrid();
       colors.fill(prevColor);
-      cascading = false;
-      schedule = null;
+      activeCascades = [];
       waitingUntil = performance.now() + 2000;
     },
+
+    switchPalette,
   };
 }

@@ -69,4 +69,21 @@ describe('createPaletteCycler', () => {
     expect(random).not.toBe(current);
     expect(PALETTES.sakura).toContain(random);
   });
+
+  it('nextPalette jumps to next palette and resets color index', () => {
+    const cycler = createPaletteCycler(0);
+    expect(cycler.currentPaletteName()).toBe('sakura');
+    cycler.nextPalette();
+    expect(cycler.currentPaletteName()).toBe('ocean');
+    // color index should be reset to 0
+    expect(cycler.currentColor()).toBe(PALETTES.ocean[0]);
+  });
+
+  it('nextPalette wraps around all palettes', () => {
+    const cycler = createPaletteCycler(0);
+    for (let i = 0; i < PALETTE_NAMES.length; i++) {
+      cycler.nextPalette();
+    }
+    expect(cycler.currentPaletteName()).toBe('sakura');
+  });
 });
