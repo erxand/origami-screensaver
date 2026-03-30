@@ -139,7 +139,6 @@ Press `P` to cycle palettes with a HUD overlay.
 
 ## Roadmap
 
-- [ ] Variable cascade easing (slow start, fast middle, ease out)
 - [ ] Edge fold behavior (partial fold off-screen at edges)
 - [ ] macOS `.saver` bundle via WKWebView
 
@@ -148,15 +147,16 @@ Press `P` to cycle palettes with a HUD overlay.
 - ✅ Equilateral triangle grid with full-screen tiling
 - ✅ Fluid fold animation (cubic ease-in-out + spring overshoot)
 - ✅ BFS cascade propagation with smooth per-triangle stagger
+- ✅ **Variable cascade easing** — ease-in-out cubic on the wave timing (slow near origin, fast through bulk, graceful deceleration at edges)
 - ✅ Paper texture (pre-generated noise + multi-angle fibers matching equilateral grain)
 - ✅ **Paper depth shading** — diagonal gradient (light upper-left → dark lower-right) + thin crease stroke per triangle for tactile 3D feel
 - ✅ 3 built-in palettes (Sakura, Ocean, Ember)
 - ✅ Palette picker overlay (press `P`)
 - ✅ Multiple simultaneous cascades (up to 2 overlapping waves)
-- ✅ Performance benchmarking (`npm run benchmark`)
+- ✅ Performance benchmarking (`npm run benchmark`) — fixed headless mock ctx
 - ✅ Dirty-flag rendering (skip unchanged triangles)
 - ✅ URL params config (`?palette=ocean&speed=2&size=60&density=1000&cascades=2&wait=8000`)
-- ✅ 93 tests across 8 test files
+- ✅ 105 tests across 8 test files
 - ✅ **BUG FIX: Edge artifacts** — canvas clip rect prevents black zigzag borders on viewport edges
 - ✅ **BUG FIX: Fold animation now clearly visible** — proper axis reflection, 600ms duration, strong crease shadow, spring overshoot renders visually
 
