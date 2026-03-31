@@ -623,6 +623,158 @@ function benchActiveSetTickScan(triCount: number, frames = 300): {
 }
 
 // ---------------------------------------------------------------------------
+// Benchmark: tick-loop overhead — allocating vs pre-allocated scratch buffers
+// Measures per-frame cost of: completedThisTick[] alloc, activeCascades.filter(),
+// and FPS tracking (Array.push+shift vs circular Float64Array).
+// ---------------------------------------------------------------------------
+function benchTickLoopOverhead(triCount: number, frames = 5000): {
+  targetTriangles: number;
+  actualTriangles: number;
+  animatingCount: number;
+  avgAllocatingUs: number;
+  avgPreallocUs: number;
+  speedupRatio: number;
+} {
+  const side = Math.max(40, Math.round(Math.sqrt((1920 * 1080 * Math.sqrt(3)) / (4 * triCount))));
+  const grid = createGrid(1920, 1080, side);
+  const adjacency = buildAdjacency(grid.rows, grid.cols);
+  const actualCount = grid.triangles.length;
+
+  const originIdx = Math.floor(actualCount / 2);
+  const schedule = buildCascadeSchedule(originIdx, adjacency, 60);
+  const baseTime = 1000;
+
+  // Build foldingSet from schedule
+  function buildFoldingSet(): Set<number> {
+    const s = new Set<number>();
+    for (const e of schedule) s.add(e.index);
+    return s;
+  }
+
+  // --- ALLOCATING (current) ---
+  const allocTimes: number[] = [];
+  {
+    let foldingSet1 = buildFoldingSet();
+    const animStates1 = createAnimStates(actualCount);
+    for (const e of schedule) {
+      const tri = grid.triangles[e.index];
+      let fei = 0;
+      if (e.parentIdx >= 0) fei = findFoldEdge(tri, grid.triangles[e.parentIdx]);
+      startFold(animStates1[e.index], baseTime + e.startTime, '#bbb', '#f8c3cd', fei, 400);
+    }
+    const activeCascades1: { startTime: number; maxScheduleStart: number }[] = [
+      { startTime: baseTime, maxScheduleStart: schedule[schedule.length - 1]?.startTime ?? 0 }
+    ];
+    let fpsSamples1: number[] = [];
+    const colors1 = new Array<string>(actualCount).fill('#f8c3cd');
+
+    for (let f = 0; f < frames; f++) {
+      const now = baseTime + f * 16.67;
+      const t0 = performance.now();
+
+      // FPS: push + shift
+      fpsSamples1.push(now);
+      if (fpsSamples1.length > 60) fpsSamples1.shift();
+
+      // Cascade prune: filter → new array
+      const pruned = activeCascades1.filter(c =>
+        now < c.startTime + c.maxScheduleStart + 650
+      );
+      activeCascades1.length = 0;
+      for (const c of pruned) activeCascades1.push(c);
+
+      // completedThisTick: new array
+      const completedThisTick: number[] = [];
+      for (const i of foldingSet1) {
+        const anim = animStates1[i];
+        if (anim.state !== State.FOLDING) { completedThisTick.push(i); continue; }
+        if (anim.startTime <= now) {
+          const done = updateAnim(anim, now);
+          if (done) { colors1[i] = anim.newColor!; resetAnim(anim); completedThisTick.push(i); }
+        }
+      }
+      for (const i of completedThisTick) { foldingSet1.delete(i); }
+
+      allocTimes.push(performance.now() - t0);
+    }
+  }
+
+  // --- PRE-ALLOCATED (optimized) ---
+  const preallocTimes: number[] = [];
+  {
+    let foldingSet2 = buildFoldingSet();
+    const animStates2 = createAnimStates(actualCount);
+    for (const e of schedule) {
+      const tri = grid.triangles[e.index];
+      let fei = 0;
+      if (e.parentIdx >= 0) fei = findFoldEdge(tri, grid.triangles[e.parentIdx]);
+      startFold(animStates2[e.index], baseTime + e.startTime, '#bbb', '#f8c3cd', fei, 400);
+    }
+    const activeCascades2: { startTime: number; maxScheduleStart: number }[] = [
+      { startTime: baseTime, maxScheduleStart: schedule[schedule.length - 1]?.startTime ?? 0 }
+    ];
+    let activeCascades2Len = activeCascades2.length;
+
+    // Circular FPS buffer
+    const FPS_SAMPLES = 60;
+    const fpsBuf = new Float64Array(FPS_SAMPLES);
+    let fpsBufHead = 0;
+    let fpsBufSize = 0;
+
+    // Pre-allocated scratch
+    let completedBuf = new Int32Array(Math.max(256, foldingSet2.size));
+    let completedLen = 0;
+    const colors2 = new Array<string>(actualCount).fill('#f8c3cd');
+
+    for (let f = 0; f < frames; f++) {
+      const now = baseTime + f * 16.67;
+      const t0 = performance.now();
+
+      // FPS: circular buffer
+      fpsBuf[fpsBufHead] = now;
+      fpsBufHead = (fpsBufHead + 1) % FPS_SAMPLES;
+      if (fpsBufSize < FPS_SAMPLES) fpsBufSize++;
+
+      // Cascade prune: in-place
+      let ci = activeCascades2Len;
+      while (ci--) {
+        if (now >= activeCascades2[ci].startTime + activeCascades2[ci].maxScheduleStart + 650) {
+          activeCascades2.splice(ci, 1);
+          activeCascades2Len--;
+        }
+      }
+
+      // completedBuf: reuse
+      if (completedBuf.length < foldingSet2.size) completedBuf = new Int32Array(foldingSet2.size * 2);
+      completedLen = 0;
+      for (const i of foldingSet2) {
+        const anim = animStates2[i];
+        if (anim.state !== State.FOLDING) { completedBuf[completedLen++] = i; continue; }
+        if (anim.startTime <= now) {
+          const done = updateAnim(anim, now);
+          if (done) { colors2[i] = anim.newColor!; resetAnim(anim); completedBuf[completedLen++] = i; }
+        }
+      }
+      for (let ci2 = 0; ci2 < completedLen; ci2++) foldingSet2.delete(completedBuf[ci2]);
+
+      preallocTimes.push(performance.now() - t0);
+    }
+  }
+
+  const avgAlloc   = allocTimes.reduce((a, b) => a + b, 0) / allocTimes.length * 1000;
+  const avgPrealloc = preallocTimes.reduce((a, b) => a + b, 0) / preallocTimes.length * 1000;
+
+  return {
+    targetTriangles: triCount,
+    actualTriangles: actualCount,
+    animatingCount: schedule.length,
+    avgAllocatingUs: avgAlloc,
+    avgPreallocUs: avgPrealloc,
+    speedupRatio: avgAlloc / Math.max(avgPrealloc, 0.0001),
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Run all benchmarks
 // ---------------------------------------------------------------------------
 function run(): void {
@@ -722,6 +874,19 @@ function run(): void {
     console.log(`    O(N) full scan:   ${(r.avgFullScanMs * 1000).toFixed(1)} µs/frame`);
     console.log(`    O(K) active set:  ${(r.avgActiveSetMs * 1000).toFixed(1)} µs/frame`);
     console.log(`    Speedup:          ${r.speedupRatio.toFixed(1)}×`);
+    console.log();
+  }
+
+  // 4e. Tick-loop overhead: allocating vs pre-allocated scratch
+  console.log('--- Tick-Loop Overhead: allocating vs pre-allocated scratch ---');
+  console.log('    (completedThisTick[], activeCascades.filter, FPS push+shift)');
+  console.log();
+  for (const count of triangleCounts) {
+    const r = benchTickLoopOverhead(count);
+    console.log(`  ${r.actualTriangles} triangles (target ${count}), ${r.animatingCount} animating:`);
+    console.log(`    Allocating (new[] per frame): ${r.avgAllocatingUs.toFixed(2)} µs/tick`);
+    console.log(`    Pre-allocated (reuse):        ${r.avgPreallocUs.toFixed(2)} µs/tick`);
+    console.log(`    Speedup:                      ${r.speedupRatio.toFixed(2)}×`);
     console.log();
   }
 
