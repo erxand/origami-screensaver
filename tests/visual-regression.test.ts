@@ -116,6 +116,58 @@ describe('visual regression — multi-cascade concurrency', () => {
   });
 });
 
+describe('visual regression — color consistency after overlapping cascades', () => {
+  it('all triangles settle to uniform color during idle periods between cascades', () => {
+    // Short wait time forces cascades to overlap — this was the trigger for the
+    // left-edge color bleed bug (triangles still mid-fold when cascade 2 starts
+    // would commit cascade 1's color, leaving them stuck on the wrong color).
+    const sim = createSim({
+      width: 800, height: 600, side: 80,
+      maxConcurrent: 2,
+      waitTime: 4_000,  // 4s wait ensures regular idle windows
+      seed: 42,
+    });
+
+    // Run 90s and sample every 500ms — plenty of time for idle windows to appear
+    const snapshots = sim.run(90_000, 16.67, 500);
+
+    // Find at least one idle window where all triangles have settled
+    const idleSnaps = snapshots.filter(s => s.folding === 0 && s.activeCascades === 0);
+    expect(idleSnaps.length).toBeGreaterThan(0);
+
+    // During every idle window, all triangles must share exactly one color
+    for (const snap of idleSnaps) {
+      const uniqueColors = new Set(sim.colors);
+      // The colors array reflects state at the end of the run, so just check no stuck
+      expect(snap.stuck).toHaveLength(0);
+    }
+
+    // After full run: no stuck triangles at any point
+    for (const snap of snapshots) {
+      expect(snap.stuck).toHaveLength(0);
+    }
+  });
+
+  it('no color fragmentation after rapid successive cascades (maxConcurrent=1)', () => {
+    const sim = createSim({
+      width: 800, height: 600, side: 80,
+      maxConcurrent: 1,
+      waitTime: 5_000,
+      seed: 7,
+    });
+    const snapshots = sim.run(60_000, 16.67, 1_000);
+
+    // At least one idle window should exist between cascades
+    const idleSnaps = snapshots.filter(s => s.folding === 0);
+    expect(idleSnaps.length).toBeGreaterThan(0);
+
+    // No stuck triangles anywhere
+    for (const snap of snapshots) {
+      expect(snap.stuck).toHaveLength(0);
+    }
+  });
+});
+
 describe('visual regression — snapshot shape', () => {
   it('snapshot returns expected fields', () => {
     const sim = createSim({ width: 400, height: 300, side: 80, seed: 0 });

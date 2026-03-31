@@ -148,7 +148,6 @@ Press `P` to cycle palettes with a HUD overlay.
 
 ## Roadmap
 
-- [ ] **[BUG] Left-edge triangles not updating color on cascade** — triangles on the far left side start with the correct color on page load, but when a cascade completes they stay the old color while the rest of the screen updates. Most likely cause: the offscreen static cache rebuild is clipping or skipping triangles whose bounding box extends past x=0 (negative x coords from the 1-triangle bleed zone). The `patchStaticTriangle()` O(1) update may also be using wrong coordinate bounds. Fix: verify the offscreen cache dimensions match canvas + bleed zone; ensure all triangles with any vertex on-canvas are included in cache rebuilds and patch operations.
 - [ ] **[ONGOING-A] Performance — always be optimizing.** Profile, find bottleneck, fix it, measure. Areas: OffscreenCanvas + Worker for texture gen, batch same-color triangles into single path, WebGL renderer for 1000+ tris.
 - [ ] **[ONGOING-B] Bug hunting — use the app, break it.** Alternate with performance work. Actually run the screensaver, interact with it like a user would, and find bugs. Known example: switching palettes mid-transition leaves 3 colors on screen. Try: rapid palette switches, resizing window during cascade, very slow/fast speed params, switching palettes at exact start/end of cascade, leaving it running for 10+ minutes and watching for drift or stuck states, URL param edge cases. When you find a bug: fix it immediately if straightforward, or add it to Roadmap with a clear description if complex. Track which bugs you found and fixed in ## Completed.
 
@@ -167,6 +166,7 @@ Press `P` to cycle palettes with a HUD overlay.
 - ✅ **Eliminated O(N) per-tick reduce** — `maxScheduleStart` pre-computed when building cascade schedule; prune check is now O(1) per active cascade per tick
 - ✅ **Removed allocating `points` arg from `applyDepthShading`** — callers previously passed inline `[edgeP0, edgeP1, [x,y]]` arrays that were never used; removing eliminates 2 array allocations per animating-triangle per frame
 
+- ✅ **Fix left-edge color bleed** — when a new cascade starts, triangles already mid-fold (still animating from a previous cascade) had their `newColor` left pointing at the old cascade's target; on completion they committed the wrong color, leaving left-edge triangles (last in BFS order) stuck on the previous color while the rest of the screen updated. Fix: redirect `anim.newColor` to the new cascade's color for any in-progress fold; add 2 color-consistency visual regression tests (145 total)
 - ✅ **Fix edge bleed** — fill canvas with current screensaver color before drawing triangles; eliminates black gaps at canvas edges
 - ✅ **TypeScript migration** — all `src/*.ts` + `tests/*.test.ts`; `tsconfig.json` strict mode; shared interfaces in `src/types.ts` (Triangle, AnimState, GridResult, CascadeEntry, ParsedConfig, etc.); also fixed pre-existing flaky cascade test
 - ✅ **macOS `.saver` bundle** — WKWebView wrapper in `macos/`; Swift compiled with CLT swiftc (no Xcode required); `macos/build.sh` for one-shot build → `OrigamiScreensaver.saver`; verified Mach-O 64-bit bundle arm64

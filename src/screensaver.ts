@@ -114,7 +114,17 @@ export function createScreensaver(canvas: HTMLCanvasElement, options: Screensave
 
     for (const entry of schedule) {
       const anim = animStates[entry.index];
-      if (anim.state === State.FOLDING) continue;
+
+      if (anim.state === State.FOLDING) {
+        // Triangle is already mid-fold from an earlier cascade.
+        // Redirect its destination color so when the fold completes it commits
+        // the correct new color rather than the earlier cascade's color.
+        // This fixes the bug where left-edge triangles (late in BFS order) stay
+        // on the previous cascade's color while the rest of the screen updates.
+        anim.newColor = newColor;
+        foldingSet.add(entry.index); // ensure we're tracking it
+        continue;
+      }
 
       const tri = grid.triangles[entry.index];
 
