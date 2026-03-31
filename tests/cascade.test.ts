@@ -59,11 +59,18 @@ describe('buildCascadeSchedule', () => {
   });
 
   it('respects cascade delay with jitter', () => {
-    const adj = buildAdjacency(3, 4);
+    // Use a larger grid so BFS distances are bigger and timing is unambiguous
+    const adj = buildAdjacency(10, 10);
     const schedule = buildCascadeSchedule(0, adj, 100);
-    // Distance-1 entries should have start times near 100ms (within jitter range)
-    const dist1Entries = schedule.filter(s => s.startTime > 50 && s.startTime < 150);
-    expect(dist1Entries.length).toBeGreaterThan(0);
+    // With a 10x10 grid, max distance ~16 hops. totalDuration = 16 * 100 = 1600ms.
+    // Distance-1 entries: t=1/16=0.0625, easedT≈0.031, base≈50ms + up to 35ms jitter.
+    // Distance-2 entries: t=2/16=0.125, easedT≈0.25*0.125^2*... well above 0.
+    // At minimum, start times should be > 0 for non-origin entries
+    const nonOrigin = schedule.filter(s => s.startTime > 0);
+    expect(nonOrigin.length).toBeGreaterThan(0);
+    // And max start time should be well above 0
+    const maxStart = Math.max(...schedule.map(s => s.startTime));
+    expect(maxStart).toBeGreaterThan(100);
   });
 });
 

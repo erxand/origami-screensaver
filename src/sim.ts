@@ -7,6 +7,7 @@ import { createGrid, buildAdjacency } from './grid.js';
 import { createAnimStates, startFold, updateAnim, resetAnim, findFoldEdge, State } from './animator.js';
 import { buildCascadeSchedule } from './cascade.js';
 import { createPaletteCycler } from './palette.js';
+import type { AnimState, CascadeEntry, GridResult } from './types.js';
 
 const DEFAULT_FOLD_DURATION = 600;
 const DEFAULT_WAIT_TIME = 8_000;
@@ -14,21 +15,39 @@ const DEFAULT_SIDE = 60;
 const DEFAULT_MAX_CONCURRENT = 2;
 const DEFAULT_CASCADE_DELAY = 60;
 
+export interface SimOptions {
+  width?: number;
+  height?: number;
+  side?: number;
+  foldDuration?: number;
+  waitTime?: number;
+  maxConcurrent?: number;
+  cascadeDelay?: number;
+  paletteIdx?: number;
+  seed?: number;
+}
+
+export interface SimSnapshot {
+  now: number;
+  triangleCount: number;
+  folding: number;
+  idle: number;
+  done: number;
+  stuck: { index: number; elapsed: number; progress: number }[];
+  activeCascades: number;
+  totalCascadesStarted: number;
+  totalTrianglesFolded: number;
+}
+
+interface ActiveCascade {
+  startTime: number;
+  endTime: number;
+}
+
 /**
  * Create a headless screensaver simulation.
- *
- * @param {object} options
- * @param {number} [options.width=1920]
- * @param {number} [options.height=1080]
- * @param {number} [options.side=60]           Triangle side length
- * @param {number} [options.foldDuration=600]  ms per fold
- * @param {number} [options.waitTime=8000]     ms between cascades
- * @param {number} [options.maxConcurrent=2]   Max simultaneous cascades
- * @param {number} [options.cascadeDelay=60]   BFS time step ms
- * @param {number} [options.paletteIdx=0]      Starting palette
- * @param {number} [options.seed=42]           RNG seed (simple LCG)
  */
-export function createSim(options = {}) {
+export function createSim(options: SimOptions = {}) {
   const width         = options.width         ?? 1920;
   const height        = options.height        ?? 1080;
   const side          = options.side          ?? DEFAULT_SIDE;
@@ -37,31 +56,30 @@ export function createSim(options = {}) {
   const maxConcurrent = options.maxConcurrent ?? DEFAULT_MAX_CONCURRENT;
   const cascadeDelay  = options.cascadeDelay  ?? DEFAULT_CASCADE_DELAY;
 
-  const grid       = createGrid(width, height, side);
-  const adjacency  = buildAdjacency(grid.rows, grid.cols);
-  const count      = grid.triangles.length;
-  const cycler     = createPaletteCycler(options.paletteIdx ?? 0);
-  const animStates = createAnimStates(count);
-  const colors     = new Array(count).fill(cycler.currentColor());
+  const grid: GridResult   = createGrid(width, height, side);
+  const adjacency          = buildAdjacency(grid.rows, grid.cols);
+  const count              = grid.triangles.length;
+  const cycler             = createPaletteCycler(options.paletteIdx ?? 0);
+  const animStates         = createAnimStates(count);
+  const colors             = new Array<string>(count).fill(cycler.currentColor());
 
   // Simple seeded LCG for reproducible random origins
   let rng = (options.seed ?? 42) | 0;
-  function nextRand() {
+  function nextRand(): number {
     rng = (Math.imul(1664525, rng) + 1013904223) | 0;
     return (rng >>> 0) / 4294967296;
   }
 
-  let activeCascades = [];
+  let activeCascades: ActiveCascade[] = [];
   let waitingUntil   = 0;
   let totalCascadesStarted = 0;
   let totalTrianglesFolded = 0;
 
   /** Snapshot current state for analysis */
-  function snapshot(now) {
+  function snapshot(now: number): SimSnapshot {
     let folding = 0;
     let idle    = 0;
     let done    = 0;
-    const mixedColors = []; // triangles that finished folding but still have an unexpected color
 
     for (let i = 0; i < count; i++) {
       const s = animStates[i].state;
@@ -71,7 +89,7 @@ export function createSim(options = {}) {
     }
 
     // Detect triangles stuck mid-animation (FOLDING long past their scheduled end)
-    const stuck = [];
+    const stuck: { index: number; elapsed: number; progress: number }[] = [];
     for (let i = 0; i < count; i++) {
       const a = animStates[i];
       if (a.state === State.FOLDING) {
@@ -95,7 +113,7 @@ export function createSim(options = {}) {
     };
   }
 
-  function startCascade(now) {
+  function startCascade(now: number): void {
     if (activeCascades.length >= maxConcurrent) return;
 
     const newColor  = cycler.nextColor();
@@ -113,7 +131,7 @@ export function createSim(options = {}) {
       startFold(anim, now + entry.startTime, newColor, colors[entry.index], foldEdgeIdx, foldDuration);
     }
 
-    const maxStart = schedule.reduce((m, e) => Math.max(m, e.startTime), 0);
+    const maxStart = schedule.reduce((m: number, e: CascadeEntry) => Math.max(m, e.startTime), 0);
     activeCascades.push({ startTime: now, endTime: now + maxStart + foldDuration + 50 });
     totalCascadesStarted++;
   }
@@ -121,7 +139,7 @@ export function createSim(options = {}) {
   /**
    * Advance simulation by one "tick" at the given timestamp.
    */
-  function tick(now) {
+  function tick(now: number): void {
     // Prune finished cascades
     activeCascades = activeCascades.filter(c => now < c.endTime);
 
@@ -137,7 +155,7 @@ export function createSim(options = {}) {
       if (a.state === State.FOLDING) {
         const done = updateAnim(a, now);
         if (done) {
-          colors[i] = a.newColor;
+          colors[i] = a.newColor!;
           resetAnim(a);
           totalTrianglesFolded++;
         }
@@ -148,14 +166,9 @@ export function createSim(options = {}) {
   /**
    * Run simulation for a given duration at the specified step rate.
    * Returns array of snapshots taken at snapshotInterval ms.
-   *
-   * @param {number} durationMs     Total simulation time to run
-   * @param {number} stepMs         Time between ticks (default 16.67 = 60fps)
-   * @param {number} snapshotEvery  Take snapshot every N ms
-   * @returns {Array<object>} snapshots
    */
-  function run(durationMs, stepMs = 16.67, snapshotEvery = 5000) {
-    const snapshots = [];
+  function run(durationMs: number, stepMs = 16.67, snapshotEvery = 5000): SimSnapshot[] {
+    const snapshots: SimSnapshot[] = [];
     let now = 0;
     let nextSnapshot = snapshotEvery;
 

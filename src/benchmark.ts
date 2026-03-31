@@ -9,16 +9,17 @@
 import { createGrid, buildAdjacency } from './grid.js';
 import { createRenderer } from './renderer.js';
 import { createAnimStates, startFold, updateAnim, resetAnim, findFoldEdge, State } from './animator.js';
-import { buildCascadeSchedule, cascadeDuration } from './cascade.js';
+import { buildCascadeSchedule } from './cascade.js';
 import { createPaletteCycler } from './palette.js';
 
 // ---------------------------------------------------------------------------
 // Mock canvas context (headless — no real DOM)
 // ---------------------------------------------------------------------------
-function mockCtx(width = 1920, height = 1080) {
+function mockCtx(width = 1920, height = 1080): CanvasRenderingContext2D {
   return {
-    canvas: { width, height },
+    canvas: { width, height } as HTMLCanvasElement,
     clearRect() {},
+    fillRect() {},
     beginPath() {},
     moveTo() {},
     lineTo() {},
@@ -38,19 +39,19 @@ function mockCtx(width = 1920, height = 1080) {
     createLinearGradient() {
       return { addColorStop() {} };
     },
-  };
+  } as unknown as CanvasRenderingContext2D;
 }
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-function median(arr) {
+function median(arr: number[]): number {
   const sorted = arr.slice().sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
   return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
-function percentile(arr, p) {
+function percentile(arr: number[], p: number): number {
   const sorted = arr.slice().sort((a, b) => a - b);
   const idx = Math.ceil((p / 100) * sorted.length) - 1;
   return sorted[Math.max(0, idx)];
@@ -59,7 +60,7 @@ function percentile(arr, p) {
 // ---------------------------------------------------------------------------
 // Benchmark: render loop cost (time per frame)
 // ---------------------------------------------------------------------------
-function benchRenderFrame(triCount, frames = 200) {
+function benchRenderFrame(triCount: number, frames = 200) {
   const side = Math.max(40, Math.round(Math.sqrt((1920 * 1080 * Math.sqrt(3)) / (4 * triCount))));
   const grid = createGrid(1920, 1080, side);
   const adjacency = buildAdjacency(grid.rows, grid.cols);
@@ -68,8 +69,8 @@ function benchRenderFrame(triCount, frames = 200) {
   const ctx = mockCtx();
   const renderer = createRenderer(ctx);
   const animStates = createAnimStates(actualCount);
-  const colors = new Array(actualCount).fill('#f8c3cd');
-  const renderAnims = new Array(actualCount).fill(null);
+  const colors = new Array<string>(actualCount).fill('#f8c3cd');
+  const renderAnims: (Record<string, unknown> | null)[] = new Array(actualCount).fill(null);
 
   // Start a cascade so some triangles are animating
   const cycler = createPaletteCycler(0);
@@ -87,7 +88,7 @@ function benchRenderFrame(triCount, frames = 200) {
     startFold(animStates[entry.index], baseTime + entry.startTime, newColor, colors[entry.index], foldEdgeIdx, 400);
   }
 
-  const frameTimes = [];
+  const frameTimes: number[] = [];
 
   for (let f = 0; f < frames; f++) {
     const now = baseTime + f * 16.67; // ~60fps timestamps
@@ -97,7 +98,7 @@ function benchRenderFrame(triCount, frames = 200) {
       const anim = animStates[i];
       if (anim.state === State.FOLDING) {
         const done = updateAnim(anim, now);
-        if (done) colors[i] = anim.newColor;
+        if (done) colors[i] = anim.newColor!;
       }
     }
 
@@ -106,17 +107,18 @@ function benchRenderFrame(triCount, frames = 200) {
       const a = animStates[i];
       if (a.state === State.FOLDING) {
         if (!renderAnims[i]) renderAnims[i] = {};
-        renderAnims[i].progress = a.progress;
-        renderAnims[i].oldColor = a.oldColor;
-        renderAnims[i].newColor = a.newColor;
-        renderAnims[i].foldEdgeIdx = a.foldEdgeIdx;
+        const ra = renderAnims[i]!;
+        ra['progress'] = a.progress;
+        ra['oldColor'] = a.oldColor;
+        ra['newColor'] = a.newColor;
+        ra['foldEdgeIdx'] = a.foldEdgeIdx;
       } else {
         renderAnims[i] = null;
       }
     }
 
     const t0 = performance.now();
-    renderer.renderFrame(grid.triangles, colors, renderAnims);
+    renderer.renderFrame(grid.triangles, colors, renderAnims as never);
     frameTimes.push(performance.now() - t0);
   }
 
@@ -135,12 +137,12 @@ function benchRenderFrame(triCount, frames = 200) {
 // ---------------------------------------------------------------------------
 // Benchmark: cascade scheduling time
 // ---------------------------------------------------------------------------
-function benchCascadeScheduling(triCount, iterations = 50) {
+function benchCascadeScheduling(triCount: number, iterations = 50) {
   const side = Math.max(40, Math.round(Math.sqrt((1920 * 1080 * Math.sqrt(3)) / (4 * triCount))));
   const grid = createGrid(1920, 1080, side);
   const adjacency = buildAdjacency(grid.rows, grid.cols);
   const actualCount = grid.triangles.length;
-  const times = [];
+  const times: number[] = [];
 
   for (let i = 0; i < iterations; i++) {
     const origin = Math.floor(Math.random() * actualCount);
@@ -162,7 +164,7 @@ function benchCascadeScheduling(triCount, iterations = 50) {
 // ---------------------------------------------------------------------------
 // Benchmark: memory allocations per frame (object creation detection)
 // ---------------------------------------------------------------------------
-function benchMemoryPerFrame(triCount, frames = 100) {
+function benchMemoryPerFrame(triCount: number, frames = 100) {
   const side = Math.max(40, Math.round(Math.sqrt((1920 * 1080 * Math.sqrt(3)) / (4 * triCount))));
   const grid = createGrid(1920, 1080, side);
   const adjacency = buildAdjacency(grid.rows, grid.cols);
@@ -171,8 +173,8 @@ function benchMemoryPerFrame(triCount, frames = 100) {
   const ctx = mockCtx();
   const renderer = createRenderer(ctx);
   const animStates = createAnimStates(actualCount);
-  const colors = new Array(actualCount).fill('#f8c3cd');
-  const renderAnims = new Array(actualCount).fill(null);
+  const colors = new Array<string>(actualCount).fill('#f8c3cd');
+  const renderAnims: (Record<string, unknown> | null)[] = new Array(actualCount).fill(null);
 
   // Start cascade
   const originIdx = 0;
@@ -188,7 +190,8 @@ function benchMemoryPerFrame(triCount, frames = 100) {
   }
 
   // Warm up GC
-  if (global.gc) global.gc();
+  const gc = (global as unknown as { gc?: () => void }).gc;
+  if (gc) gc();
   const heapBefore = process.memoryUsage().heapUsed;
 
   for (let f = 0; f < frames; f++) {
@@ -202,15 +205,16 @@ function benchMemoryPerFrame(triCount, frames = 100) {
       const a = animStates[i];
       if (a.state === State.FOLDING) {
         if (!renderAnims[i]) renderAnims[i] = {};
-        renderAnims[i].progress = a.progress;
-        renderAnims[i].oldColor = a.oldColor;
-        renderAnims[i].newColor = a.newColor;
-        renderAnims[i].foldEdgeIdx = a.foldEdgeIdx;
+        const ra = renderAnims[i]!;
+        ra['progress'] = a.progress;
+        ra['oldColor'] = a.oldColor;
+        ra['newColor'] = a.newColor;
+        ra['foldEdgeIdx'] = a.foldEdgeIdx;
       } else {
         renderAnims[i] = null;
       }
     }
-    renderer.renderFrame(grid.triangles, colors, renderAnims);
+    renderer.renderFrame(grid.triangles, colors, renderAnims as never);
   }
 
   const heapAfter = process.memoryUsage().heapUsed;
@@ -227,7 +231,7 @@ function benchMemoryPerFrame(triCount, frames = 100) {
 // ---------------------------------------------------------------------------
 // Run all benchmarks
 // ---------------------------------------------------------------------------
-function run() {
+function run(): void {
   const triangleCounts = [500, 1000, 2000];
 
   console.log('='.repeat(70));
@@ -278,7 +282,7 @@ function run() {
     console.log();
   }
 
-  // 4. Idle frame cost (dirty-flag: skip renderFrame when nothing animating)
+  // 4. Idle frame cost
   console.log('--- Idle Frame Cost (dirty-flag skip, no animation) ---');
   console.log();
   for (const count of triangleCounts) {
@@ -286,20 +290,17 @@ function run() {
     const grid = createGrid(1920, 1080, side);
     const actualCount = grid.triangles.length;
     const animStates = createAnimStates(actualCount);
-    // No folds started — all IDLE
     const IDLE_FRAMES = 500;
     const t0 = performance.now();
     for (let f = 0; f < IDLE_FRAMES; f++) {
-      // Simulate the dirty-flag check: only run update loop, no render
       let hasAnim = false;
       for (let i = 0; i < actualCount; i++) {
         if (animStates[i].state !== 'IDLE') { hasAnim = true; break; }
       }
-      // dirty=false, hasAnim=false → skip renderFrame entirely
       if (hasAnim) { /* would render */ }
     }
     const idleMs = (performance.now() - t0) / IDLE_FRAMES;
-    console.log(`  ${actualCount} triangles (target ${count}): ${idleMs.toFixed(4)} ms/frame idle (dirty-flag saves ~100% render cost)`);
+    console.log(`  ${actualCount} triangles (target ${count}): ${idleMs.toFixed(4)} ms/frame idle`);
   }
   console.log();
 
@@ -307,9 +308,8 @@ function run() {
   console.log('--- TOP BOTTLENECKS ---');
   console.log();
 
-  const bottlenecks = [];
+  const bottlenecks: { severity: string; area: string; detail: string }[] = [];
 
-  // Check if render is the bottleneck
   const worst = renderResults[renderResults.length - 1];
   if (worst.p95FrameMs > 16.67) {
     bottlenecks.push({
@@ -322,27 +322,25 @@ function run() {
     bottlenecks.push({
       severity: 'MEDIUM',
       area: 'Render loop',
-      detail: `P95 frame time ${worst.p95FrameMs.toFixed(1)}ms uses >${Math.round(worst.p95FrameMs / 16.67 * 100)}% of 16.67ms budget at ${worst.actualTriangles} triangles`,
+      detail: `P95 frame time ${worst.p95FrameMs.toFixed(1)}ms uses >${Math.round(worst.p95FrameMs / 16.67 * 100)}% of budget`,
     });
   }
 
-  // Check cascade scheduling
   const worstCascade = cascadeResults[cascadeResults.length - 1];
   if (worstCascade.maxMs > 5) {
     bottlenecks.push({
       severity: 'MEDIUM',
       area: 'Cascade scheduling',
-      detail: `Max scheduling time ${worstCascade.maxMs.toFixed(1)}ms at ${worstCascade.actualTriangles} triangles — may cause frame skip`,
+      detail: `Max scheduling time ${worstCascade.maxMs.toFixed(1)}ms — may cause frame skip`,
     });
   }
 
-  // Check memory
   const worstMem = memResults[memResults.length - 1];
   if (worstMem.estimatedBytesPerFrame > 10000) {
     bottlenecks.push({
       severity: 'MEDIUM',
       area: 'Memory allocations',
-      detail: `~${worstMem.estimatedBytesPerFrame} bytes/frame at ${worstMem.actualTriangles} triangles — GC pressure risk`,
+      detail: `~${worstMem.estimatedBytesPerFrame} bytes/frame — GC pressure risk`,
     });
   }
 

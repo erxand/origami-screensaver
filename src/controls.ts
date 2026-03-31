@@ -9,6 +9,8 @@
  * and shows a live FPS counter.
  */
 
+import type { ScreensaverInstance, ControlsOptions } from './types.js';
+
 const PANEL_CSS = `
   position: fixed;
   top: 24px;
@@ -115,7 +117,7 @@ const PALETTE_BTN_ACTIVE_CSS = `
 
 // Inject slider thumb styles once
 let stylesInjected = false;
-function injectSliderStyles() {
+function injectSliderStyles(): void {
   if (stylesInjected) return;
   stylesInjected = true;
   const style = document.createElement('style');
@@ -141,7 +143,7 @@ function injectSliderStyles() {
   document.head.appendChild(style);
 }
 
-function makeSliderRow(label, id, min, max, step, value, unit = '') {
+function makeSliderRow(label: string, id: string, min: number, max: number, step: number, value: number, unit = ''): HTMLDivElement {
   const row = document.createElement('div');
   row.style.cssText = ROW_CSS;
 
@@ -151,10 +153,10 @@ function makeSliderRow(label, id, min, max, step, value, unit = '') {
 
   const slider = document.createElement('input');
   slider.type = 'range';
-  slider.min = min;
-  slider.max = max;
-  slider.step = step;
-  slider.value = value;
+  slider.min = String(min);
+  slider.max = String(max);
+  slider.step = String(step);
+  slider.value = String(value);
   slider.style.cssText = SLIDER_CSS;
   slider.className = 'oc-slider';
   slider.id = id;
@@ -164,7 +166,7 @@ function makeSliderRow(label, id, min, max, step, value, unit = '') {
   return row;
 }
 
-function makePaletteRow(palettes, currentIdx, onSelect) {
+function makePaletteRow(palettes: string[], currentIdx: number, onSelect: (idx: number) => void): HTMLDivElement {
   const row = document.createElement('div');
   row.style.cssText = ROW_CSS;
 
@@ -181,7 +183,7 @@ function makePaletteRow(palettes, currentIdx, onSelect) {
     const btn = document.createElement('button');
     btn.textContent = name;
     btn.style.cssText = idx === currentIdx ? PALETTE_BTN_ACTIVE_CSS : PALETTE_BTN_CSS;
-    btn.dataset.idx = idx;
+    btn.dataset['idx'] = String(idx);
     btn.addEventListener('click', () => onSelect(idx));
     btns.appendChild(btn);
   });
@@ -192,14 +194,8 @@ function makePaletteRow(palettes, currentIdx, onSelect) {
 
 /**
  * Create the live controls overlay.
- *
- * @param {object} screensaver — must expose setParam(key, val), getParam(key), getFPS()
- * @param {object} opts
- * @param {string[]} opts.palettes — palette names
- * @param {number} opts.paletteIdx — initial palette index
- * @returns {{ toggle: () => void, setFPS: (fps: number) => void, updatePaletteButtons: (idx: number) => void, destroy: () => void }}
  */
-export function createControls(screensaver, opts = {}) {
+export function createControls(screensaver: ScreensaverInstance, opts: ControlsOptions = {}) {
   if (typeof document === 'undefined') return null; // SSR / test guard
 
   injectSliderStyles();
@@ -208,10 +204,10 @@ export function createControls(screensaver, opts = {}) {
   let currentPaletteIdx = opts.paletteIdx ?? 0;
 
   // Initial values from screensaver
-  const initSpeed    = screensaver.getParam('speed');       // multiplier 0.25–4
-  const initWait     = screensaver.getParam('waitTime');     // ms
-  const initSize     = screensaver.getParam('side');         // px
-  const initCascades = screensaver.getParam('maxConcurrent');
+  const initSpeed    = screensaver.getParam('speed') ?? 1;
+  const initWait     = screensaver.getParam('waitTime') ?? 8000;
+  const initSize     = screensaver.getParam('side') ?? 0;
+  const initCascades = screensaver.getParam('maxConcurrent') ?? 2;
 
   const panel = document.createElement('div');
   panel.style.cssText = PANEL_CSS;
@@ -257,8 +253,8 @@ export function createControls(screensaver, opts = {}) {
   panel.appendChild(hint);
 
   // Wire speed slider
-  const speedSlider = panel.querySelector('#oc-speed');
-  const speedVal    = panel.querySelector('#oc-speed-val');
+  const speedSlider = panel.querySelector('#oc-speed') as HTMLInputElement;
+  const speedVal    = panel.querySelector('#oc-speed-val') as HTMLElement;
   speedSlider.addEventListener('input', () => {
     const v = parseFloat(speedSlider.value);
     speedVal.textContent = v + '×';
@@ -266,8 +262,8 @@ export function createControls(screensaver, opts = {}) {
   });
 
   // Wire wait slider
-  const waitSlider = panel.querySelector('#oc-wait');
-  const waitVal    = panel.querySelector('#oc-wait-val');
+  const waitSlider = panel.querySelector('#oc-wait') as HTMLInputElement;
+  const waitVal    = panel.querySelector('#oc-wait-val') as HTMLElement;
   waitSlider.addEventListener('input', () => {
     const v = parseInt(waitSlider.value, 10);
     waitVal.textContent = v + 's';
@@ -275,8 +271,8 @@ export function createControls(screensaver, opts = {}) {
   });
 
   // Wire size slider — only apply on release (grid rebuild is expensive)
-  const sizeSlider = panel.querySelector('#oc-size');
-  const sizeVal    = panel.querySelector('#oc-size-val');
+  const sizeSlider = panel.querySelector('#oc-size') as HTMLInputElement;
+  const sizeVal    = panel.querySelector('#oc-size-val') as HTMLElement;
   sizeSlider.addEventListener('input', () => {
     sizeVal.textContent = sizeSlider.value + 'px';
   });
@@ -286,11 +282,11 @@ export function createControls(screensaver, opts = {}) {
   });
 
   // Wire cascades slider
-  const cascSlider = panel.querySelector('#oc-cascades');
-  const cascVal    = panel.querySelector('#oc-cascades-val');
+  const cascSlider = panel.querySelector('#oc-cascades') as HTMLInputElement;
+  const cascVal    = panel.querySelector('#oc-cascades-val') as HTMLElement;
   cascSlider.addEventListener('input', () => {
     const v = parseInt(cascSlider.value, 10);
-    cascVal.textContent = v;
+    cascVal.textContent = String(v);
     screensaver.setParam('maxConcurrent', v);
   });
 
@@ -298,30 +294,30 @@ export function createControls(screensaver, opts = {}) {
   panel.style.display = 'none';
   document.body.appendChild(panel);
 
-  function toggle() {
+  function toggle(): void {
     visible = !visible;
     panel.style.display = visible ? 'block' : 'none';
   }
 
-  function setFPS(fps) {
+  function setFPS(fps: number): void {
     const el = panel.querySelector('#oc-fps');
     if (el) el.textContent = fps + ' fps';
   }
 
-  function updatePaletteButtons(activeIdx) {
+  function updatePaletteButtons(activeIdx: number): void {
     const btns = panel.querySelectorAll('#oc-palette-btns button');
     btns.forEach((btn, i) => {
-      btn.style.cssText = i === activeIdx ? PALETTE_BTN_ACTIVE_CSS : PALETTE_BTN_CSS;
+      (btn as HTMLElement).style.cssText = i === activeIdx ? PALETTE_BTN_ACTIVE_CSS : PALETTE_BTN_CSS;
     });
   }
 
   // Keep palette buttons in sync when P key cycles palette externally
-  function syncPaletteIdx(idx) {
+  function syncPaletteIdx(idx: number): void {
     currentPaletteIdx = idx;
     updatePaletteButtons(idx);
   }
 
-  function destroy() {
+  function destroy(): void {
     if (panel.parentNode) panel.parentNode.removeChild(panel);
   }
 

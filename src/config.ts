@@ -11,15 +11,13 @@
  */
 
 import { PALETTE_NAMES } from './palette.js';
+import type { ParsedConfig } from './types.js';
 
 /**
  * Parse URL search params and return a validated screensaver options object.
- *
- * @param {string|URLSearchParams} [search] - URL search string (default: window.location.search)
- * @returns {{ paletteIdx: number, foldDuration: number, side: number, density: number, maxConcurrent: number, waitTime: number }}
  */
-export function parseConfig(search) {
-  let params;
+export function parseConfig(search?: string | URLSearchParams): ParsedConfig {
+  let params: URLSearchParams;
   if (typeof search === 'string') {
     params = new URLSearchParams(search);
   } else if (search instanceof URLSearchParams) {
@@ -94,11 +92,8 @@ export function parseConfig(search) {
 
 /**
  * Build a URL search string from a config object (for sharing/linking).
- *
- * @param {object} config - config object as returned by parseConfig
- * @returns {string} - URL search string (e.g. "?palette=ocean&speed=2")
  */
-export function buildConfigUrl(config) {
+export function buildConfigUrl(config: ParsedConfig): string {
   const params = new URLSearchParams();
 
   if (config.paletteIdx != null && config.paletteIdx !== 0) {

@@ -8,15 +8,15 @@
  *   - Each row of triangles shares a horizontal band of height h
  */
 
+import type { Triangle, GridResult } from './types.js';
+
 const SQRT3 = Math.sqrt(3);
 
 /**
  * Build the full triangle grid for a given canvas size.
  * Returns { triangles, cols, rows, triHeight, triSide }
- *   triangles: flat array of { row, col, points, cx, cy, up }
- *   neighbors are resolved via getNeighbors()
  */
-export function createGrid(canvasWidth, canvasHeight, side = 70) {
+export function createGrid(canvasWidth: number, canvasHeight: number, side = 70): GridResult {
   const h = (side * SQRT3) / 2; // triangle height
   const halfSide = side / 2;
 
@@ -24,7 +24,7 @@ export function createGrid(canvasWidth, canvasHeight, side = 70) {
   const rows = Math.ceil(canvasHeight / h) + 1;
   const cols = Math.ceil(canvasWidth / halfSide) + 1;
 
-  const triangles = [];
+  const triangles: Triangle[] = [];
 
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < cols; col++) {
@@ -42,7 +42,13 @@ export function createGrid(canvasWidth, canvasHeight, side = 70) {
 /**
  * Compute the three vertices of triangle (row, col).
  */
-export function triangleVertices(row, col, halfSide, h, up) {
+export function triangleVertices(
+  row: number,
+  col: number,
+  halfSide: number,
+  h: number,
+  up: boolean
+): [number, number][] {
   const x = col * halfSide;
   const y = row * h;
 
@@ -72,9 +78,14 @@ export function triangleVertices(row, col, halfSide, h, up) {
  * Return indices of the (up to 3) neighbors of triangle at (row, col).
  * Uses the grid dimensions to bounds-check.
  */
-export function getNeighborCoords(row, col, rows, cols) {
+export function getNeighborCoords(
+  row: number,
+  col: number,
+  rows: number,
+  cols: number
+): [number, number][] {
   const up = (row + col) % 2 === 0;
-  const neighbors = [];
+  const neighbors: [number, number][] = [];
 
   // Left neighbor: same row, col - 1
   if (col > 0) neighbors.push([row, col - 1]);
@@ -95,15 +106,15 @@ export function getNeighborCoords(row, col, rows, cols) {
 /**
  * Convert (row, col) to a flat index.
  */
-export function toIndex(row, col, cols) {
+export function toIndex(row: number, col: number, cols: number): number {
   return row * cols + col;
 }
 
 /**
  * Build a full adjacency list (flat array indexed by triangle index).
  */
-export function buildAdjacency(rows, cols) {
-  const adj = new Array(rows * cols);
+export function buildAdjacency(rows: number, cols: number): number[][] {
+  const adj: number[][] = new Array(rows * cols);
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < cols; col++) {
       const idx = toIndex(row, col, cols);

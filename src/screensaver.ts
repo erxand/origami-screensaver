@@ -7,6 +7,7 @@ import { createRenderer } from './renderer.js';
 import { createPaletteCycler } from './palette.js';
 import { createAnimStates, startFold, updateAnim, resetAnim, findFoldEdge, findEdgeFoldEdge, State } from './animator.js';
 import { buildCascadeSchedule } from './cascade.js';
+import type { AnimState, RenderAnimState, CascadeEntry, GridResult, Triangle, ScreensaverOptions } from './types.js';
 
 const WAIT_BETWEEN_CASCADES = 8_000;
 const FOLD_DURATION = 600;
@@ -16,13 +17,19 @@ const MAX_CONCURRENT_CASCADES = 2;
 /**
  * Compute responsive triangle side length based on viewport.
  */
-export function responsiveSide(width, height, targetCount = 1000) {
+export function responsiveSide(width: number, height: number, targetCount = 1000): number {
   const area = width * height;
   const s = Math.sqrt((area * Math.sqrt(3)) / (4 * targetCount));
   return Math.max(40, Math.min(100, Math.round(s)));
 }
 
-export function createScreensaver(canvas, options = {}) {
+interface ActiveCascade {
+  schedule: CascadeEntry[];
+  startTime: number;
+  newColor: string;
+}
+
+export function createScreensaver(canvas: HTMLCanvasElement, options: ScreensaverOptions = {}) {
   const fixedSide     = options.side || 0;
   const targetDensity = options.density ?? 1000;
   const cascadeDelay  = options.cascadeDelay ?? CASCADE_DELAY;
@@ -34,19 +41,22 @@ export function createScreensaver(canvas, options = {}) {
   let sideOverride   = fixedSide;
   let maxConcurrent  = options.maxConcurrent  ?? MAX_CONCURRENT_CASCADES;
 
-  let ctx = canvas.getContext('2d');
-  let grid, adjacency, renderer, animStates, colors;
-  let renderAnims = [];
+  let ctx = canvas.getContext('2d')!;
+  let grid: GridResult;
+  let adjacency: number[][];
+  let renderer: ReturnType<typeof createRenderer>;
+  let animStates: AnimState[];
+  let colors: string[];
+  let renderAnims: (RenderAnimState | null)[];
   let cycler = createPaletteCycler(startPaletteIdx);
   let currentColor = cycler.currentColor();
 
-  let activeCascades = [];
+  let activeCascades: ActiveCascade[] = [];
   let waitingUntil = 0;
-  let animFrameId = null;
+  let animFrameId: number | null = null;
   let running = false;
 
   // Dirty flag — skip renderFrame when nothing has changed
-  // Set to true whenever animation state or overlay changes.
   let dirty = true;
   let activeAnimCount = 0; // triangles currently folding
 
@@ -55,10 +65,10 @@ export function createScreensaver(canvas, options = {}) {
   let paletteOverlayText = '';
 
   // FPS tracking
-  let fpsSamples = [];
+  let fpsSamples: number[] = [];
   let currentFps = 0;
 
-  function trackFPS(now) {
+  function trackFPS(now: number): void {
     fpsSamples.push(now);
     if (fpsSamples.length > 60) fpsSamples.shift();
     if (fpsSamples.length >= 2) {
@@ -67,7 +77,7 @@ export function createScreensaver(canvas, options = {}) {
     }
   }
 
-  function buildGrid() {
+  function buildGrid(): void {
     const dpr = window.devicePixelRatio || 1;
     canvas.width = canvas.clientWidth * dpr;
     canvas.height = canvas.clientHeight * dpr;
@@ -83,7 +93,7 @@ export function createScreensaver(canvas, options = {}) {
     activeCascades = [];
   }
 
-  function startCascade(now, forcedColor) {
+  function startCascade(now: number, forcedColor?: string): void {
     if (activeCascades.length >= maxConcurrent) return;
 
     const newColor = forcedColor || cycler.nextColor();
@@ -122,7 +132,7 @@ export function createScreensaver(canvas, options = {}) {
     currentColor = newColor;
   }
 
-  function drawPaletteOverlay(text) {
+  function drawPaletteOverlay(text: string): void {
     const alpha = Math.min(1, paletteOverlayTimer / 400);
     ctx.save();
     ctx.globalAlpha = alpha * 0.85;
@@ -135,7 +145,7 @@ export function createScreensaver(canvas, options = {}) {
     const x = (canvas.clientWidth - w) / 2;
     const y = canvas.clientHeight - 60;
     ctx.beginPath();
-    ctx.roundRect(x, y, w, h, 8);
+    (ctx as unknown as { roundRect: (x: number, y: number, w: number, h: number, r: number) => void }).roundRect(x, y, w, h, 8);
     ctx.fill();
     ctx.fillStyle = '#fff';
     ctx.textAlign = 'center';
@@ -144,13 +154,13 @@ export function createScreensaver(canvas, options = {}) {
     ctx.restore();
   }
 
-  function tick(now) {
+  function tick(now: number): void {
     if (!running) return;
     trackFPS(now);
 
     // Prune completed cascades
     activeCascades = activeCascades.filter(cascade => {
-      const maxStart = cascade.schedule.reduce((m, e) => Math.max(m, e.startTime), 0);
+      const maxStart = cascade.schedule.reduce((m: number, e: CascadeEntry) => Math.max(m, e.startTime), 0);
       return now < cascade.startTime + maxStart + foldDuration + 50;
     });
 
@@ -171,7 +181,7 @@ export function createScreensaver(canvas, options = {}) {
         if (anim.startTime <= now) {
           const done = updateAnim(anim, now);
           if (done) {
-            colors[i] = anim.newColor;
+            colors[i] = anim.newColor!;
             resetAnim(anim);
             dirty = true;
           } else {
@@ -194,11 +204,12 @@ export function createScreensaver(canvas, options = {}) {
       for (let i = 0; i < animStates.length; i++) {
         const a = animStates[i];
         if (a.state === State.FOLDING && a.startTime <= now) {
-          if (!renderAnims[i]) renderAnims[i] = {};
-          renderAnims[i].progress   = a.progress;
-          renderAnims[i].oldColor   = a.oldColor;
-          renderAnims[i].newColor   = a.newColor;
-          renderAnims[i].foldEdgeIdx = a.foldEdgeIdx;
+          if (!renderAnims[i]) renderAnims[i] = {} as RenderAnimState;
+          const ra = renderAnims[i]!;
+          ra.progress   = a.progress;
+          ra.oldColor   = a.oldColor!;
+          ra.newColor   = a.newColor!;
+          ra.foldEdgeIdx = a.foldEdgeIdx;
         } else {
           renderAnims[i] = null;
         }
@@ -219,7 +230,7 @@ export function createScreensaver(canvas, options = {}) {
 
   // ── Live param API ──────────────────────────────────────────────────────────
 
-  function setParam(key, value) {
+  function setParam(key: string, value: number): void {
     switch (key) {
       case 'speed':
         foldDuration = Math.round(600 / Math.max(0.1, value));
@@ -254,7 +265,7 @@ export function createScreensaver(canvas, options = {}) {
     }
   }
 
-  function getParam(key) {
+  function getParam(key: string): number | undefined {
     switch (key) {
       case 'speed':        return Math.round((600 / foldDuration) * 100) / 100;
       case 'waitTime':     return waitTime;

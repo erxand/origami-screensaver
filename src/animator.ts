@@ -7,17 +7,18 @@
  */
 
 import { easeWithOvershoot } from './easing.js';
+import type { AnimState, Triangle } from './types.js';
 
 export const State = {
-  IDLE: 'IDLE',
-  FOLDING: 'FOLDING',
-  DONE: 'DONE',
+  IDLE: 'IDLE' as const,
+  FOLDING: 'FOLDING' as const,
+  DONE: 'DONE' as const,
 };
 
 /**
  * Create an animation state for a single triangle.
  */
-export function createAnimState() {
+export function createAnimState(): AnimState {
   return {
     state: State.IDLE,
     progress: 0,       // 0..1
@@ -32,7 +33,14 @@ export function createAnimState() {
 /**
  * Start folding a triangle.
  */
-export function startFold(animState, startTime, newColor, oldColor, foldEdgeIdx, duration = 600) {
+export function startFold(
+  animState: AnimState,
+  startTime: number,
+  newColor: string,
+  oldColor: string,
+  foldEdgeIdx: number,
+  duration = 600
+): void {
   animState.state = State.FOLDING;
   animState.progress = 0;
   animState.startTime = startTime;
@@ -46,7 +54,7 @@ export function startFold(animState, startTime, newColor, oldColor, foldEdgeIdx,
  * Update a triangle's animation based on current time.
  * Returns true if the triangle just completed its fold.
  */
-export function updateAnim(animState, now) {
+export function updateAnim(animState: AnimState, now: number): boolean {
   if (animState.state !== State.FOLDING) return false;
 
   const elapsed = now - animState.startTime;
@@ -64,7 +72,7 @@ export function updateAnim(animState, now) {
 /**
  * Reset a DONE triangle back to IDLE (for the next cascade cycle).
  */
-export function resetAnim(animState) {
+export function resetAnim(animState: AnimState): void {
   animState.state = State.IDLE;
   animState.progress = 0;
   animState.oldColor = null;
@@ -74,25 +82,20 @@ export function resetAnim(animState) {
 /**
  * Create an array of anim states for the entire grid.
  */
-export function createAnimStates(count) {
+export function createAnimStates(count: number): AnimState[] {
   return Array.from({ length: count }, () => createAnimState());
 }
 
 /**
  * Determine if a triangle is at the viewport boundary and return the edge
  * index closest to the nearest screen edge (for "peeling off the wall" fold).
- *
- * When a cascade wave reaches the screen boundary, triangles fold along their
- * viewport-adjacent edge instead of the cascade direction — simulating paper
- * curling away from the edge of a surface.
- *
- * @param {object} tri - Triangle { cx, cy, points }
- * @param {number} canvasWidth - Logical canvas width
- * @param {number} canvasHeight - Logical canvas height
- * @param {number} [threshold=55] - px from boundary to consider "edge triangle"
- * @returns {number} Edge index (0, 1, or 2), or -1 if not an edge triangle
  */
-export function findEdgeFoldEdge(tri, canvasWidth, canvasHeight, threshold = 55) {
+export function findEdgeFoldEdge(
+  tri: Triangle,
+  canvasWidth: number,
+  canvasHeight: number,
+  threshold = 55
+): number {
   const { cx, cy, points: pts } = tri;
 
   // Only apply to triangles whose centroid is within `threshold` of any viewport edge
@@ -104,10 +107,10 @@ export function findEdgeFoldEdge(tri, canvasWidth, canvasHeight, threshold = 55)
   if (!nearLeft && !nearRight && !nearTop && !nearBottom) return -1;
 
   // Find which edge midpoint is closest to the nearest viewport boundary
-  const edges = [
-    [pts[0], pts[1]], // edge 0
-    [pts[1], pts[2]], // edge 1
-    [pts[2], pts[0]], // edge 2
+  const edges: [[number, number], [number, number]][] = [
+    [pts[0] as [number, number], pts[1] as [number, number]], // edge 0
+    [pts[1] as [number, number], pts[2] as [number, number]], // edge 1
+    [pts[2] as [number, number], pts[0] as [number, number]], // edge 2
   ];
 
   let bestEdge = 0;
@@ -131,30 +134,18 @@ export function findEdgeFoldEdge(tri, canvasWidth, canvasHeight, threshold = 55)
 /**
  * Determine the fold edge index for a triangle being triggered by a neighbor.
  * The fold edge is the shared edge between the triangle and its trigger.
- *
- * @param {object} tri - Triangle { row, col, points, up }
- * @param {object} triggerTri - The neighbor that triggered this fold
- * @param {number} cols - Grid column count
- * @returns {number} Edge index (0, 1, or 2)
  */
-export function findFoldEdge(tri, triggerTri) {
-  const dr = triggerTri.row - tri.row;
+export function findFoldEdge(tri: Triangle, triggerTri: Triangle): number {
   const dc = triggerTri.col - tri.col;
 
   if (dc === -1) {
     // Left neighbor — shared edge is the left edge
-    // For up triangle: edge between points[0] (bottom-left) and points[2] (top) → edge index 2
-    // For down triangle: edge between points[0] (top-left) and points[2] (bottom) → edge index 2
     return 2;
   }
   if (dc === 1) {
     // Right neighbor — shared edge is the right edge
-    // For up triangle: edge between points[1] (bottom-right) and points[2] (top) → edge index 1
-    // For down triangle: edge between points[1] (top-right) and points[2] (bottom) → edge index 1
     return 1;
   }
-  // Vertical neighbor (dr !== 0, dc === 0) — shared horizontal edge
-  // For up triangle: bottom edge between points[0] and points[1] → edge index 0
-  // For down triangle: top edge between points[0] and points[1] → edge index 0
+  // Vertical neighbor — shared horizontal edge
   return 0;
 }

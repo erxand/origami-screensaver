@@ -22,7 +22,7 @@ import { createControls } from './controls.js';
 import { PALETTE_NAMES } from './palette.js';
 
 const config = parseConfig();
-const canvas = document.getElementById('canvas');
+const canvas = document.getElementById('canvas') as HTMLCanvasElement;
 const screensaver = createScreensaver(canvas, {
   paletteIdx:    config.paletteIdx,
   foldDuration:  config.foldDuration,
@@ -54,7 +54,7 @@ if (controls) {
 // Keyboard shortcuts
 const SPEED_STEPS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4];
 
-window.addEventListener('keydown', (e) => {
+window.addEventListener('keydown', (e: KeyboardEvent) => {
   switch (e.key) {
     case 'p':
     case 'P':
@@ -69,14 +69,14 @@ window.addEventListener('keydown', (e) => {
 
     case '+':
     case '=': {
-      const cur = screensaver.getParam('speed');
+      const cur = screensaver.getParam('speed') ?? 1;
       const next = SPEED_STEPS.find(s => s > cur + 0.01) ?? SPEED_STEPS[SPEED_STEPS.length - 1];
       screensaver.setParam('speed', next);
       break;
     }
     case '-':
     case '_': {
-      const cur = screensaver.getParam('speed');
+      const cur = screensaver.getParam('speed') ?? 1;
       const prev = [...SPEED_STEPS].reverse().find(s => s < cur - 0.01) ?? SPEED_STEPS[0];
       screensaver.setParam('speed', prev);
       break;

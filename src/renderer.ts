@@ -9,15 +9,17 @@
  *  - Paper texture: noise grain + multi-angle fibers (0°, 30°, -30°) matching equilateral grain
  */
 
+import type { Triangle, RenderAnimState } from './types.js';
+
 // Pre-compute darken overlay strings to avoid per-frame string allocation
 const DARKEN_STEPS = 32;
-const DARKEN_STRINGS = new Array(DARKEN_STEPS);
+const DARKEN_STRINGS: string[] = new Array(DARKEN_STEPS);
 for (let i = 0; i < DARKEN_STEPS; i++) {
   const opacity = (i / (DARKEN_STEPS - 1)) * 0.3;
   DARKEN_STRINGS[i] = `rgba(0,0,0,${opacity.toFixed(4)})`;
 }
 
-function darkenString(t) {
+function darkenString(t: number): string {
   const idx = Math.min(DARKEN_STEPS - 1, Math.max(0, Math.round(t * (DARKEN_STEPS - 1))));
   return DARKEN_STRINGS[idx];
 }
@@ -27,7 +29,7 @@ function darkenString(t) {
 // ---------------------------------------------------------------------------
 
 /** Parse a hex color string (#rgb or #rrggbb) → [r, g, b] integers 0-255. */
-function hexToRgb(hex) {
+function hexToRgb(hex: string): [number, number, number] {
   const h = hex.replace('#', '');
   if (h.length === 3) {
     return [
@@ -44,7 +46,7 @@ function hexToRgb(hex) {
 }
 
 /** Convert [r, g, b] integers to #rrggbb hex string. */
-function rgbToHex(r, g, b) {
+function rgbToHex(r: number, g: number, b: number): string {
   return '#' + [r, g, b]
     .map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0'))
     .join('');
@@ -52,13 +54,9 @@ function rgbToHex(r, g, b) {
 
 /**
  * Adjust brightness of an RGB color.
- * @param {number} r
- * @param {number} g
- * @param {number} b
- * @param {number} factor  Positive → lighten (0=no-op, 1=white), negative → darken (0=no-op, -1=black).
- * @returns {[number, number, number]}
+ * @param factor  Positive → lighten (0=no-op, 1=white), negative → darken (0=no-op, -1=black).
  */
-function adjustBrightness(r, g, b, factor) {
+function adjustBrightness(r: number, g: number, b: number, factor: number): [number, number, number] {
   if (factor >= 0) {
     return [r + (255 - r) * factor, g + (255 - g) * factor, b + (255 - b) * factor];
   }
@@ -70,10 +68,8 @@ function adjustBrightness(r, g, b, factor) {
  * Deterministic per-triangle lightness variation.
  * Returns a value in [-0.08, +0.08] derived from the triangle index via
  * Knuth multiplicative hashing — stable across frames, visually random.
- * @param {number} index - Triangle index (integer).
- * @returns {number} variation factor
  */
-export function triVariation(index) {
+export function triVariation(index: number): number {
   // Knuth multiplicative hash (uint32)
   let h = Math.imul(index >>> 0, 0x9e3779b9) >>> 0;
   h ^= h >>> 16;
@@ -89,11 +85,8 @@ export function triVariation(index) {
  * Apply per-triangle lightness variation to a hex color.
  * Returns a new hex color shifted by the variation for the given index.
  * If index is -1 (default), no variation is applied.
- * @param {string} color - Hex color string.
- * @param {number} index - Triangle index for deterministic variation; -1 = none.
- * @returns {string} Modified hex color string.
  */
-export function applyTriVariation(color, index) {
+export function applyTriVariation(color: string, index: number): string {
   if (index < 0 || !color.startsWith('#')) return color;
   const [r, g, b] = hexToRgb(color);
   const v = triVariation(index);
@@ -104,10 +97,8 @@ export function applyTriVariation(color, index) {
 /**
  * Compute the crease stroke color: 18% darker than the given hex color.
  * This makes edges nearly invisible within same-color regions (Kami 2 style).
- * @param {string} color - Hex color string.
- * @returns {string} Darker hex color string.
  */
-export function creaseColor(color) {
+export function creaseColor(color: string): string {
   if (!color.startsWith('#')) return color;
   const [r, g, b] = hexToRgb(color);
   const [nr, ng, nb] = adjustBrightness(r, g, b, -0.09);
@@ -122,12 +113,12 @@ export function creaseColor(color) {
  * Generate the paper texture canvas once at startup.
  * Returns an offscreen canvas with noise grain + multi-angle fibers.
  */
-function generatePaperTexture() {
+function generatePaperTexture(): HTMLCanvasElement {
   const SIZE = 256;
   const canvas = document.createElement('canvas');
   canvas.width = SIZE;
   canvas.height = SIZE;
-  const pctx = canvas.getContext('2d');
+  const pctx = canvas.getContext('2d')!;
 
   // Layer 1: dense random grain dots — heavier for construction-paper roughness
   for (let i = 0; i < 6000; i++) {
@@ -176,9 +167,9 @@ function generatePaperTexture() {
 /**
  * Create a renderer bound to a canvas context.
  */
-export function createRenderer(ctx) {
+export function createRenderer(ctx: CanvasRenderingContext2D) {
   // Pre-create paper texture pattern once at startup
-  let paperPattern = null;
+  let paperPattern: CanvasPattern | null = null;
   try {
     const textureCanvas = generatePaperTexture();
     paperPattern = ctx.createPattern(textureCanvas, 'repeat');
@@ -189,7 +180,7 @@ export function createRenderer(ctx) {
   /**
    * Trace the triangle path (shared between fill passes).
    */
-  function tracePath(points) {
+  function tracePath(points: [number, number][]): void {
     ctx.beginPath();
     ctx.moveTo(points[0][0], points[0][1]);
     ctx.lineTo(points[1][0], points[1][1]);
@@ -199,11 +190,8 @@ export function createRenderer(ctx) {
 
   /**
    * Apply depth shading + color-relative edge crease to an already-traced path.
-   * The path must be active (no new beginPath called after tracePath).
-   * @param {Array} points - Triangle vertices
-   * @param {string} fillColor - The hex fill color of this triangle (used to derive crease color).
    */
-  function applyDepthShading(points, fillColor) {
+  function applyDepthShading(points: [number, number][], fillColor: string): void {
     // No gradient — flat fill only (Kami 2 style: uniform color per triangle, no sheen)
 
     // Paper texture overlay
@@ -227,7 +215,7 @@ export function createRenderer(ctx) {
     ctx,
 
     /** Clear the entire canvas, optionally filling with a background color. */
-    clear(bgColor) {
+    clear(bgColor?: string): void {
       if (bgColor) {
         ctx.fillStyle = bgColor;
         ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
@@ -238,11 +226,8 @@ export function createRenderer(ctx) {
 
     /**
      * Draw a single triangle with paper depth shading.
-     * @param {Array} points - Triangle vertices [[x,y],[x,y],[x,y]]
-     * @param {string} color - Hex fill color
-     * @param {number} [triIndex=-1] - Triangle index for deterministic lightness variation; -1 = no variation.
      */
-    drawTriangle(points, color, triIndex = -1) {
+    drawTriangle(points: [number, number][], color: string, triIndex = -1): void {
       const variedColor = applyTriVariation(color, triIndex);
       tracePath(points);
       ctx.fillStyle = variedColor;
@@ -253,15 +238,15 @@ export function createRenderer(ctx) {
     /**
      * Draw a folding triangle. The triangle is split along the fold axis
      * and the folding half is transformed to simulate a paper fold.
-     *
-     * @param {Array} points - Triangle vertices [[x,y],[x,y],[x,y]]
-     * @param {string} oldColor - Color before fold
-     * @param {string} newColor - Color after fold
-     * @param {number} progress - Fold progress 0..1 (0=flat old, 0.5=edge-on, 1=flat new)
-     * @param {number} foldEdgeIdx - Index (0,1,2) of the edge to fold along.
-     * @param {number} [triIndex=-1] - Triangle index for lightness variation.
      */
-    drawFoldingTriangle(points, oldColor, newColor, progress, foldEdgeIdx, triIndex = -1) {
+    drawFoldingTriangle(
+      points: [number, number][],
+      oldColor: string,
+      newColor: string,
+      progress: number,
+      foldEdgeIdx: number,
+      triIndex = -1
+    ): void {
       const variedOld = applyTriVariation(oldColor, triIndex);
       const variedNew = applyTriVariation(newColor, triIndex);
 
@@ -348,13 +333,13 @@ export function createRenderer(ctx) {
      *
      * Clipped to canvas bounds to prevent edge artifacts from triangles
      * that extend slightly beyond the viewport.
-     *
-     * @param {Array} triangles - Grid triangles
-     * @param {Array} colors - Current color per triangle index
-     * @param {Array} animStates - Animation states (null or { progress, oldColor, newColor, foldEdgeIdx })
-     * @param {string} [bgColor] - Background fill color to eliminate edge bleed (black gaps at edges)
      */
-    renderFrame(triangles, colors, animStates, bgColor) {
+    renderFrame(
+      triangles: Triangle[],
+      colors: string[],
+      animStates: (RenderAnimState | null)[] | null,
+      bgColor?: string
+    ): void {
       this.clear(bgColor);
       ctx.save();
       ctx.beginPath();
@@ -365,7 +350,7 @@ export function createRenderer(ctx) {
         const anim = animStates ? animStates[i] : null;
         if (anim && anim.progress > 0 && anim.progress < 1.15) {
           this.drawFoldingTriangle(
-            tri.points,
+            tri.points as [number, number][],
             anim.oldColor,
             anim.newColor,
             anim.progress,
@@ -373,7 +358,7 @@ export function createRenderer(ctx) {
             i
           );
         } else {
-          this.drawTriangle(tri.points, colors[i], i);
+          this.drawTriangle(tri.points as [number, number][], colors[i], i);
         }
       }
       ctx.restore();
