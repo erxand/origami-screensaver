@@ -140,6 +140,7 @@ Press `P` to cycle palettes with a HUD overlay.
 
 ## Roadmap
 
+- [ ] **[PRIORITY] Fix edge bleed — black background showing on left/right edges** — triangles at the canvas boundary don't fully cover the edge, leaving black gaps/slivers from the background. Fix: (1) extend grid coverage so triangles bleed ~1 triangle-width beyond all 4 canvas edges, OR (2) fill the canvas background with the current screensaver color before drawing triangles so any gaps show the right color instead of black. Option 2 is simpler and more robust.
 - [ ] **[PRIORITY] Migrate to TypeScript** — convert all `src/*.js` and `tests/*.test.js` to `.ts`. Add `tsconfig.json` (strict mode), type interfaces for Triangle, AnimState, CascadeSchedule, Palette, RendererOptions, ScreensaverOptions, etc. Update Vite config (`vite.config.ts`), update Vitest config. All tests must still pass. Keep existing behavior exactly — this is a type-safety refactor only, no logic changes.
 - [ ] macOS `.saver` bundle via WKWebView
 
