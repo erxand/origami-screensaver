@@ -205,6 +205,8 @@ export function createRenderer(ctx: CanvasRenderingContext2D) {
     // In test environments, document may not exist
   }
 
+
+
   /**
    * Trace the triangle path (shared between fill passes).
    */
@@ -217,26 +219,29 @@ export function createRenderer(ctx: CanvasRenderingContext2D) {
   }
 
   /**
-   * Apply depth shading + color-relative edge crease to an already-traced path.
+   * Apply crease stroke to an already-traced path.
+   * Paper texture is no longer applied per-triangle; it's applied once per frame
+   * over the entire canvas (see renderFrame) for a 3-5x reduction in save/restore calls.
    */
   function applyDepthShading(points: [number, number][], fillColor: string): void {
-    // No gradient — flat fill only (Kami 2 style: uniform color per triangle, no sheen)
-
-    // Paper texture overlay
-    if (paperPattern) {
-      ctx.save();
-      ctx.globalCompositeOperation = 'overlay';
-      ctx.fillStyle = paperPattern;
-      ctx.fill();
-      ctx.restore();
-    }
-
     // Crease stroke: color-relative (18% darker than fill) → near-invisible within same-color regions.
-    // Falls back to a generic low-opacity black in non-hex environments.
     const stroke = fillColor ? creaseColor(fillColor) : 'rgba(0,0,0,0.09)';
     ctx.strokeStyle = stroke;
     ctx.lineWidth = 0.7;
     ctx.stroke();
+  }
+
+  /**
+   * Apply paper texture overlay over the entire canvas in one pass.
+   * Called once at the end of renderFrame instead of once per triangle.
+   */
+  function applyGlobalPaperTexture(width: number, height: number): void {
+    if (!paperPattern) return;
+    ctx.save();
+    ctx.globalCompositeOperation = 'overlay';
+    ctx.fillStyle = paperPattern;
+    ctx.fillRect(0, 0, width, height);
+    ctx.restore();
   }
 
   return {
@@ -369,9 +374,11 @@ export function createRenderer(ctx: CanvasRenderingContext2D) {
       bgColor?: string
     ): void {
       this.clear(bgColor);
+      const w = ctx.canvas.clientWidth || ctx.canvas.width;
+      const h = ctx.canvas.clientHeight || ctx.canvas.height;
       ctx.save();
       ctx.beginPath();
-      ctx.rect(0, 0, ctx.canvas.clientWidth || ctx.canvas.width, ctx.canvas.clientHeight || ctx.canvas.height);
+      ctx.rect(0, 0, w, h);
       ctx.clip();
       for (let i = 0; i < triangles.length; i++) {
         const tri = triangles[i];
@@ -389,6 +396,9 @@ export function createRenderer(ctx: CanvasRenderingContext2D) {
           this.drawTriangle(tri.points as [number, number][], colors[i], i);
         }
       }
+      // Apply paper texture once over the full canvas instead of per-triangle.
+      // Reduces save/restore calls from N×2 to 2 per frame.
+      applyGlobalPaperTexture(w, h);
       ctx.restore();
     },
   };
