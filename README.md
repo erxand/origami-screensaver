@@ -140,6 +140,7 @@ Press `P` to cycle palettes with a HUD overlay.
 
 ## Roadmap
 
+- [ ] **[PRIORITY] Migrate to TypeScript** — convert all `src/*.js` and `tests/*.test.js` to `.ts`. Add `tsconfig.json` (strict mode), type interfaces for Triangle, AnimState, CascadeSchedule, Palette, RendererOptions, ScreensaverOptions, etc. Update Vite config (`vite.config.ts`), update Vitest config. All tests must still pass. Keep existing behavior exactly — this is a type-safety refactor only, no logic changes.
 - [ ] macOS `.saver` bundle via WKWebView
 
 ## Completed
