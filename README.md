@@ -87,14 +87,15 @@ Benchmarks on Apple Silicon (M-series), measured headlessly:
 
 | Triangles | Avg frame | P95 frame | ~FPS |
 |-----------|-----------|-----------|------|
-| ~500      | 0.028 ms  | 0.035 ms  | 35k+ |
-| ~1000     | 0.039 ms  | 0.046 ms  | 25k+ |
-| ~2000     | 0.055 ms  | 0.063 ms  | 18k+ |
+| ~500      | 0.175 ms  | 0.252 ms  | 5700+ |
+| ~1000     | 0.171 ms  | 0.256 ms  | 5800+ |
+| ~2000     | 0.169 ms  | 0.200 ms  | 5900+ |
 
 Well within 60fps budget at any viewport size. Key optimizations:
 - **Dirty flag** — unchanged triangles are skipped entirely each frame
 - **Pre-allocated arrays** — no object creation in the render loop
-- **Minimal state saves** — canvas save/restore only when needed
+- **Color variation cache** — `applyTriVariation` and `creaseColor` results cached; eliminates per-frame string allocation (~6× speedup vs baseline)
+- **Global paper texture** — paper overlay applied once per frame over full canvas instead of per-triangle; reduces canvas save/restore from N×2 to 2 per frame
 
 Run the full benchmark:
 
