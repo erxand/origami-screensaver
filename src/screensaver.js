@@ -204,7 +204,7 @@ export function createScreensaver(canvas, options = {}) {
         }
       }
 
-      renderer.renderFrame(grid.triangles, colors, renderAnims);
+      renderer.renderFrame(grid.triangles, colors, renderAnims, currentColor);
 
       if (paletteOverlayTimer > 0) {
         drawPaletteOverlay(paletteOverlayText);

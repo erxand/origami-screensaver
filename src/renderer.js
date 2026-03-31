@@ -226,9 +226,14 @@ export function createRenderer(ctx) {
   return {
     ctx,
 
-    /** Clear the entire canvas. */
-    clear() {
-      ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+    /** Clear the entire canvas, optionally filling with a background color. */
+    clear(bgColor) {
+      if (bgColor) {
+        ctx.fillStyle = bgColor;
+        ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+      } else {
+        ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+      }
     },
 
     /**
@@ -347,9 +352,10 @@ export function createRenderer(ctx) {
      * @param {Array} triangles - Grid triangles
      * @param {Array} colors - Current color per triangle index
      * @param {Array} animStates - Animation states (null or { progress, oldColor, newColor, foldEdgeIdx })
+     * @param {string} [bgColor] - Background fill color to eliminate edge bleed (black gaps at edges)
      */
-    renderFrame(triangles, colors, animStates) {
-      this.clear();
+    renderFrame(triangles, colors, animStates, bgColor) {
+      this.clear(bgColor);
       ctx.save();
       ctx.beginPath();
       ctx.rect(0, 0, ctx.canvas.clientWidth || ctx.canvas.width, ctx.canvas.clientHeight || ctx.canvas.height);
