@@ -60,7 +60,7 @@ export function parseConfig(search) {
   }
 
   // --- density (target triangle count for auto-size) ---
-  let density = 1000;
+  let density = 500; // default halved to produce ~2x larger triangles
   const densityParam = params.get('density');
   if (densityParam !== null) {
     const d = parseInt(densityParam, 10);
@@ -111,7 +111,7 @@ export function buildConfigUrl(config) {
   if (config.side != null && config.side !== 0) {
     params.set('size', String(config.side));
   }
-  if (config.density != null && config.density !== 1000) {
+  if (config.density != null && config.density !== 500) {
     params.set('density', String(config.density));
   }
   if (config.maxConcurrent != null && config.maxConcurrent !== 2) {

@@ -62,7 +62,7 @@ function adjustBrightness(r, g, b, factor) {
   if (factor >= 0) {
     return [r + (255 - r) * factor, g + (255 - g) * factor, b + (255 - b) * factor];
   }
-  const f = 1 + factor; // factor=-0.18 → f=0.82
+  const f = 1 + factor; // factor=-0.09 → f=0.82
   return [r * f, g * f, b * f];
 }
 
@@ -110,7 +110,7 @@ export function applyTriVariation(color, index) {
 export function creaseColor(color) {
   if (!color.startsWith('#')) return color;
   const [r, g, b] = hexToRgb(color);
-  const [nr, ng, nb] = adjustBrightness(r, g, b, -0.18);
+  const [nr, ng, nb] = adjustBrightness(r, g, b, -0.09);
   return rgbToHex(nr, ng, nb);
 }
 
@@ -133,7 +133,7 @@ function generatePaperTexture() {
   for (let i = 0; i < 1200; i++) {
     const x = Math.random() * SIZE;
     const y = Math.random() * SIZE;
-    const opacity = 0.03 + Math.random() * 0.05; // 0.03–0.08
+    const opacity = 0.08 + Math.random() * 0.10; // 0.03–0.08
     pctx.fillStyle = `rgba(255,255,255,${opacity})`;
     pctx.fillRect(x, y, 1, 1);
   }

@@ -8,7 +8,7 @@ describe('parseConfig', () => {
       paletteIdx: 0,
       foldDuration: 400,
       side: 0,
-      density: 1000,
+      density: 500,
       maxConcurrent: 2,
       waitTime: 8000,
     });
@@ -119,17 +119,17 @@ describe('parseConfig', () => {
 
 describe('buildConfigUrl', () => {
   it('returns empty string for all-default config', () => {
-    const url = buildConfigUrl({ paletteIdx: 0, foldDuration: 400, side: 0, density: 1000, maxConcurrent: 2, waitTime: 8000 });
+    const url = buildConfigUrl({ paletteIdx: 0, foldDuration: 400, side: 0, density: 500, maxConcurrent: 2, waitTime: 8000 });
     expect(url).toBe('');
   });
 
   it('encodes non-default palette', () => {
-    const url = buildConfigUrl({ paletteIdx: 1, foldDuration: 400, side: 0, density: 1000, maxConcurrent: 2, waitTime: 8000 });
+    const url = buildConfigUrl({ paletteIdx: 1, foldDuration: 400, side: 0, density: 500, maxConcurrent: 2, waitTime: 8000 });
     expect(url).toContain('palette=ocean');
   });
 
   it('encodes speed when foldDuration is non-default', () => {
-    const url = buildConfigUrl({ paletteIdx: 0, foldDuration: 200, side: 0, density: 1000, maxConcurrent: 2, waitTime: 8000 });
+    const url = buildConfigUrl({ paletteIdx: 0, foldDuration: 200, side: 0, density: 500, maxConcurrent: 2, waitTime: 8000 });
     expect(url).toContain('speed=2');
   });
 
