@@ -81,28 +81,56 @@ export function triVariation(index: number): number {
   return ((h >>> 0) / 0xffffffff) * 0.16 - 0.08;
 }
 
+// ---------------------------------------------------------------------------
+// Per-triangle color variation cache
+// Cache: Map<baseColor, Map<triIndex, variedColor>>
+// Only 6 palette colors × ~3000 triangle indices = bounded.
+// Cache is cleared when a new base color is first seen after palette change.
+// ---------------------------------------------------------------------------
+const _triVariationCache = new Map<string, Map<number, string>>();
+
 /**
  * Apply per-triangle lightness variation to a hex color.
  * Returns a new hex color shifted by the variation for the given index.
  * If index is -1 (default), no variation is applied.
+ * Results are cached: same (color, index) → same string, no per-frame allocation.
  */
 export function applyTriVariation(color: string, index: number): string {
   if (index < 0 || !color.startsWith('#')) return color;
-  const [r, g, b] = hexToRgb(color);
-  const v = triVariation(index);
-  const [nr, ng, nb] = adjustBrightness(r, g, b, v);
-  return rgbToHex(nr, ng, nb);
+  let byIndex = _triVariationCache.get(color);
+  if (!byIndex) {
+    byIndex = new Map<number, string>();
+    _triVariationCache.set(color, byIndex);
+  }
+  let cached = byIndex.get(index);
+  if (cached === undefined) {
+    const [r, g, b] = hexToRgb(color);
+    const v = triVariation(index);
+    const [nr, ng, nb] = adjustBrightness(r, g, b, v);
+    cached = rgbToHex(nr, ng, nb);
+    byIndex.set(index, cached);
+  }
+  return cached;
 }
+
+// Cache for creaseColor — only ~6-12 varied colors active at a time
+const _creaseColorCache = new Map<string, string>();
 
 /**
  * Compute the crease stroke color: 18% darker than the given hex color.
  * This makes edges nearly invisible within same-color regions (Kami 2 style).
+ * Results are cached to avoid per-frame string allocation.
  */
 export function creaseColor(color: string): string {
   if (!color.startsWith('#')) return color;
-  const [r, g, b] = hexToRgb(color);
-  const [nr, ng, nb] = adjustBrightness(r, g, b, -0.09);
-  return rgbToHex(nr, ng, nb);
+  let cached = _creaseColorCache.get(color);
+  if (cached === undefined) {
+    const [r, g, b] = hexToRgb(color);
+    const [nr, ng, nb] = adjustBrightness(r, g, b, -0.09);
+    cached = rgbToHex(nr, ng, nb);
+    _creaseColorCache.set(color, cached);
+  }
+  return cached;
 }
 
 // ---------------------------------------------------------------------------

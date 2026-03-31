@@ -8,7 +8,7 @@
     "build": "vite build",
     "test": "vitest run",
     "test:watch": "vitest",
-    "benchmark": "node --experimental-strip-types src/benchmark.ts",
+    "benchmark": "npx tsx src/benchmark.ts",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
