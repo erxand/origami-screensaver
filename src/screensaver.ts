@@ -92,7 +92,7 @@ export function createScreensaver(canvas: HTMLCanvasElement, options: Screensave
     const side = sideOverride || responsiveSide(canvas.clientWidth, canvas.clientHeight, targetDensity);
     grid = createGrid(canvas.clientWidth, canvas.clientHeight, side);
     adjacency = buildAdjacency(grid.rows, grid.cols);
-    renderer = createRenderer(ctx);
+    renderer = createRenderer(ctx, grid.triCoords);
     animStates = createAnimStates(grid.triangles.length);
     colors = new Array(grid.triangles.length).fill(currentColor);
     renderAnims = new Array(grid.triangles.length).fill(null);

@@ -100,6 +100,7 @@ Well within 60fps budget at any viewport size. Key optimizations:
 - **Incremental static cache patch** — fold completions paint just 1 triangle onto the offscreen cache (O(1)) instead of a full O(N) rebuild; at 3000 triangles with ~300 folds per cascade this eliminates ~900,000 redundant draw ops per cascade
 - **Pre-computed cascade maxStart** — eliminates O(N) `reduce()` on the `schedule` array every animation tick
 - **Active-set tick scan** — `foldingSet: Set<number>` maintains only the K folding triangle indices; tick update loop and renderAnims build iterate K instead of N (at 3000 triangles / 300 animating, eliminates 2×(N−K) = ~5400 null-checks per frame); `renderFrame` accepts the set for an O(K) animating-draw pass
+- **Typed-array triangle coords** — `Float32Array triCoords` (stride 6) stores all triangle vertices in a flat contiguous buffer; render loops read directly from the buffer instead of dereferencing nested `triangle.points[i][j]` arrays, eliminating per-triangle array allocation in the hot path; measured **1.32× speedup** in the fallback render loop (168µs vs 222µs/frame at 3000 triangles)
 
 Run the full benchmark:
 
@@ -145,9 +146,11 @@ Press `P` to cycle palettes with a HUD overlay.
 
 ## Roadmap
 
-- [ ] **[ONGOING] Performance — always be optimizing.** When nothing else is left, find and fix the next bottleneck. Areas to explore: OffscreenCanvas + Worker for texture generation, batch same-color triangles in a single path (reduces ctx state changes), typed arrays instead of object arrays for triangle data, canvas compositing tricks to reduce overdraw, WebGL renderer as a future option for 1000+ triangles at 60fps.
+- [ ] **[ONGOING] Performance — always be optimizing.** When nothing else is left, find and fix the next bottleneck. Areas to explore: OffscreenCanvas + Worker for texture generation, batch same-color triangles in a single path (reduces ctx state changes), canvas compositing tricks to reduce overdraw, WebGL renderer as a future option for 1000+ triangles at 60fps.
 
 ## Completed
+
+- ✅ **Typed-array triangle coords** — `Float32Array triCoords` (stride 6) stores all vertex data contiguously in `GridResult`; render/patch loops read from buffer instead of `triangle.points[i][j]` nested arrays; inline idle-triangle draw eliminates `tracePath()` call + pts allocation per triangle; measured **1.32× speedup** in the render loop at 3000 triangles (168µs vs 222µs/frame)
 
 - ✅ **Active-set tick scan O(K)** — `foldingSet: Set<number>` tracks which triangles are in FOLDING state; tick loop + renderAnims build iterate only K animating indices instead of all N; renderer's `renderFrame` accepts optional `foldingIndices` for the same O(K) draw pass; eliminates N−K null-checks per frame during cascades; 3 new renderer tests (143 total)
 

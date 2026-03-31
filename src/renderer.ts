@@ -11,6 +11,9 @@
 
 import type { Triangle, RenderAnimState } from './types.js';
 
+// Stride for triCoords: [x0,y0,x1,y1,x2,y2] per triangle.
+const COORDS_STRIDE = 6;
+
 // Pre-compute darken overlay strings to avoid per-frame string allocation
 const DARKEN_STEPS = 32;
 const DARKEN_STRINGS: string[] = new Array(DARKEN_STEPS);
@@ -202,7 +205,7 @@ function generatePaperTexture(): HTMLCanvasElement {
  *   The cache is rebuilt whenever `invalidateStaticCache()` is called — i.e. when
  *   a triangle finishes folding (its committed color changed) or on resize.
  */
-export function createRenderer(ctx: CanvasRenderingContext2D) {
+export function createRenderer(ctx: CanvasRenderingContext2D, triCoords?: Float32Array) {
   // Pre-create paper texture pattern once at startup
   let paperPattern: CanvasPattern | null = null;
   try {
@@ -236,13 +239,20 @@ export function createRenderer(ctx: CanvasRenderingContext2D) {
       return;
     }
     const sc = staticCtx;
-    const pts = triangle.points as [number, number][];
     const variedColor = applyTriVariation(color, index);
 
     sc.beginPath();
-    sc.moveTo(pts[0][0], pts[0][1]);
-    sc.lineTo(pts[1][0], pts[1][1]);
-    sc.lineTo(pts[2][0], pts[2][1]);
+    if (triCoords) {
+      const base = index * COORDS_STRIDE;
+      sc.moveTo(triCoords[base],     triCoords[base + 1]);
+      sc.lineTo(triCoords[base + 2], triCoords[base + 3]);
+      sc.lineTo(triCoords[base + 4], triCoords[base + 5]);
+    } else {
+      const pts = triangle.points as [number, number][];
+      sc.moveTo(pts[0][0], pts[0][1]);
+      sc.lineTo(pts[1][0], pts[1][1]);
+      sc.lineTo(pts[2][0], pts[2][1]);
+    }
     sc.closePath();
     sc.fillStyle = variedColor;
     sc.fill();
@@ -274,6 +284,7 @@ export function createRenderer(ctx: CanvasRenderingContext2D) {
 
   /**
    * Rebuild the static cache by drawing all idle triangles onto staticCtx.
+   * Uses triCoords Float32Array when available for cache-friendly coord reads.
    */
   function rebuildStaticCache(
     triangles: Triangle[],
@@ -300,21 +311,42 @@ export function createRenderer(ctx: CanvasRenderingContext2D) {
     sc.clip();
 
     // Draw every triangle that is NOT currently animating
-    for (let i = 0; i < triangles.length; i++) {
-      const anim = animStates ? animStates[i] : null;
-      if (anim && anim.progress > 0 && anim.progress < 1.15) continue; // animating — skip
-      const pts = triangles[i].points as [number, number][];
-      const variedColor = applyTriVariation(colors[i], i);
-      sc.beginPath();
-      sc.moveTo(pts[0][0], pts[0][1]);
-      sc.lineTo(pts[1][0], pts[1][1]);
-      sc.lineTo(pts[2][0], pts[2][1]);
-      sc.closePath();
-      sc.fillStyle = variedColor;
-      sc.fill();
-      sc.strokeStyle = creaseColor(variedColor);
-      sc.lineWidth = 0.7;
-      sc.stroke();
+    if (triCoords) {
+      // Fast path: use typed buffer — eliminates nested array dereferences
+      for (let i = 0; i < triangles.length; i++) {
+        const anim = animStates ? animStates[i] : null;
+        if (anim && anim.progress > 0 && anim.progress < 1.15) continue;
+        const base = i * COORDS_STRIDE;
+        const variedColor = applyTriVariation(colors[i], i);
+        sc.beginPath();
+        sc.moveTo(triCoords[base],     triCoords[base + 1]);
+        sc.lineTo(triCoords[base + 2], triCoords[base + 3]);
+        sc.lineTo(triCoords[base + 4], triCoords[base + 5]);
+        sc.closePath();
+        sc.fillStyle = variedColor;
+        sc.fill();
+        sc.strokeStyle = creaseColor(variedColor);
+        sc.lineWidth = 0.7;
+        sc.stroke();
+      }
+    } else {
+      // Fallback: nested array access (test environment or no triCoords provided)
+      for (let i = 0; i < triangles.length; i++) {
+        const anim = animStates ? animStates[i] : null;
+        if (anim && anim.progress > 0 && anim.progress < 1.15) continue;
+        const pts = triangles[i].points as [number, number][];
+        const variedColor = applyTriVariation(colors[i], i);
+        sc.beginPath();
+        sc.moveTo(pts[0][0], pts[0][1]);
+        sc.lineTo(pts[1][0], pts[1][1]);
+        sc.lineTo(pts[2][0], pts[2][1]);
+        sc.closePath();
+        sc.fillStyle = variedColor;
+        sc.fill();
+        sc.strokeStyle = creaseColor(variedColor);
+        sc.lineWidth = 0.7;
+        sc.stroke();
+      }
     }
 
     sc.restore();
@@ -548,34 +580,24 @@ export function createRenderer(ctx: CanvasRenderingContext2D) {
 
         // Draw only animating triangles on top — O(K) when foldingIndices provided
         if (hasAnim && animStates) {
-          if (foldingIndices) {
-            // O(K): iterate the active set directly
-            for (const i of foldingIndices) {
-              const anim = animStates[i];
-              if (!anim || anim.progress <= 0 || anim.progress >= 1.15) continue;
-              this.drawFoldingTriangle(
-                triangles[i].points as [number, number][],
-                anim.oldColor,
-                anim.newColor,
-                anim.progress,
-                anim.foldEdgeIdx,
-                i
-              );
+          const indices = foldingIndices
+            ? Array.from(foldingIndices)
+            : triangles.map((_, idx) => idx);
+          for (const i of indices) {
+            const anim = animStates[i];
+            if (!anim || anim.progress <= 0 || anim.progress >= 1.15) continue;
+            let pts: [number, number][];
+            if (triCoords) {
+              const base = i * COORDS_STRIDE;
+              pts = [
+                [triCoords[base],     triCoords[base + 1]],
+                [triCoords[base + 2], triCoords[base + 3]],
+                [triCoords[base + 4], triCoords[base + 5]],
+              ];
+            } else {
+              pts = triangles[i].points as [number, number][];
             }
-          } else {
-            // O(N) fallback
-            for (let i = 0; i < triangles.length; i++) {
-              const anim = animStates[i];
-              if (!anim || anim.progress <= 0 || anim.progress >= 1.15) continue;
-              this.drawFoldingTriangle(
-                triangles[i].points as [number, number][],
-                anim.oldColor,
-                anim.newColor,
-                anim.progress,
-                anim.foldEdgeIdx,
-                i
-              );
-            }
+            this.drawFoldingTriangle(pts, anim.oldColor, anim.newColor, anim.progress, anim.foldEdgeIdx, i);
           }
         }
 
@@ -588,20 +610,46 @@ export function createRenderer(ctx: CanvasRenderingContext2D) {
         ctx.beginPath();
         ctx.rect(0, 0, w, h);
         ctx.clip();
-        for (let i = 0; i < triangles.length; i++) {
-          const tri = triangles[i];
-          const anim = animStates ? animStates[i] : null;
-          if (anim && anim.progress > 0 && anim.progress < 1.15) {
-            this.drawFoldingTriangle(
-              tri.points as [number, number][],
-              anim.oldColor,
-              anim.newColor,
-              anim.progress,
-              anim.foldEdgeIdx,
-              i
-            );
-          } else {
-            this.drawTriangle(tri.points as [number, number][], colors[i], i);
+        if (triCoords) {
+          // Fast path: read coords directly from typed buffer — no per-triangle array allocation
+          for (let i = 0; i < triangles.length; i++) {
+            const anim = animStates ? animStates[i] : null;
+            const base = i * COORDS_STRIDE;
+            const x0 = triCoords[base],     y0 = triCoords[base + 1];
+            const x1 = triCoords[base + 2], y1 = triCoords[base + 3];
+            const x2 = triCoords[base + 4], y2 = triCoords[base + 5];
+            if (anim && anim.progress > 0 && anim.progress < 1.15) {
+              // Need pts array for drawFoldingTriangle — only for animating tris (rare in fallback)
+              this.drawFoldingTriangle([[x0,y0],[x1,y1],[x2,y2]], anim.oldColor, anim.newColor, anim.progress, anim.foldEdgeIdx, i);
+            } else {
+              // Inline drawTriangle — eliminates tracePath() call and pts array allocation
+              const variedColor = applyTriVariation(colors[i], i);
+              ctx.beginPath();
+              ctx.moveTo(x0, y0);
+              ctx.lineTo(x1, y1);
+              ctx.lineTo(x2, y2);
+              ctx.closePath();
+              ctx.fillStyle = variedColor;
+              ctx.fill();
+              applyDepthShading(variedColor);
+            }
+          }
+        } else {
+          for (let i = 0; i < triangles.length; i++) {
+            const tri = triangles[i];
+            const anim = animStates ? animStates[i] : null;
+            if (anim && anim.progress > 0 && anim.progress < 1.15) {
+              this.drawFoldingTriangle(
+                tri.points as [number, number][],
+                anim.oldColor,
+                anim.newColor,
+                anim.progress,
+                anim.foldEdgeIdx,
+                i
+              );
+            } else {
+              this.drawTriangle(tri.points as [number, number][], colors[i], i);
+            }
           }
         }
         applyGlobalPaperTexture(w, h);

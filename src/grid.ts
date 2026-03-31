@@ -25,6 +25,7 @@ export function createGrid(canvasWidth: number, canvasHeight: number, side = 70)
   const cols = Math.ceil(canvasWidth / halfSide) + 1;
 
   const triangles: Triangle[] = [];
+  const triCoords = new Float32Array(rows * cols * 6); // [x0,y0,x1,y1,x2,y2,...], stride 6
 
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < cols; col++) {
@@ -32,11 +33,15 @@ export function createGrid(canvasWidth: number, canvasHeight: number, side = 70)
       const points = triangleVertices(row, col, halfSide, h, up);
       const cx = (points[0][0] + points[1][0] + points[2][0]) / 3;
       const cy = (points[0][1] + points[1][1] + points[2][1]) / 3;
+      const idx = (row * cols + col) * 6;
+      triCoords[idx]     = points[0][0]; triCoords[idx + 1] = points[0][1];
+      triCoords[idx + 2] = points[1][0]; triCoords[idx + 3] = points[1][1];
+      triCoords[idx + 4] = points[2][0]; triCoords[idx + 5] = points[2][1];
       triangles.push({ row, col, points, cx, cy, up });
     }
   }
 
-  return { triangles, cols, rows, triHeight: h, triSide: side };
+  return { triangles, cols, rows, triHeight: h, triSide: side, triCoords };
 }
 
 /**

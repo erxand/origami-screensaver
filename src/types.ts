@@ -36,6 +36,8 @@ export interface GridResult {
   rows: number;
   triHeight: number;
   triSide: number;
+  /** Flat typed buffer: [x0,y0,x1,y1,x2,y2, ...] per triangle (stride 6). */
+  triCoords: Float32Array;
 }
 
 export interface CascadeEntry {
