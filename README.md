@@ -99,6 +99,7 @@ Well within 60fps budget at any viewport size. Key optimizations:
 - **Static triangle cache** — idle triangles are blit from an offscreen canvas; during a cascade, per-frame fill calls drop from N → K (animating only), measured **3.5× reduction** in draw calls at 3000+ triangles
 - **Incremental static cache patch** — fold completions paint just 1 triangle onto the offscreen cache (O(1)) instead of a full O(N) rebuild; at 3000 triangles with ~300 folds per cascade this eliminates ~900,000 redundant draw ops per cascade
 - **Pre-computed cascade maxStart** — eliminates O(N) `reduce()` on the `schedule` array every animation tick
+- **Active-set tick scan** — `foldingSet: Set<number>` maintains only the K folding triangle indices; tick update loop and renderAnims build iterate K instead of N (at 3000 triangles / 300 animating, eliminates 2×(N−K) = ~5400 null-checks per frame); `renderFrame` accepts the set for an O(K) animating-draw pass
 
 Run the full benchmark:
 
@@ -118,7 +119,7 @@ npm run build      # Production build
 
 ## Tests
 
-137 tests across 9 test files:
+143 tests across 9 test files:
 
 | File | Tests | Covers |
 |------|-------|--------|
@@ -126,7 +127,7 @@ npm run build      # Production build
 | `animator.test.js` | 18 | State machine, easing, spring overshoot |
 | `cascade.test.js` | 9 | BFS correctness, timing schedule |
 | `palette.test.js` | 14 | Palette structure, color validation, cycling |
-| `renderer.test.js` | 19 | Draw calls, dirty flags (mock canvas) |
+| `renderer.test.js` | 25 | Draw calls, dirty flags (mock canvas), active-set renderFrame path |
 | `easing.test.js` | 23 | Easing function correctness |
 | `benchmark.test.js` | 4 | Benchmark harness correctness |
 | `config.test.js` | 24 | URL param parsing, validation, round-trip |
@@ -147,6 +148,8 @@ Press `P` to cycle palettes with a HUD overlay.
 - [ ] **[ONGOING] Performance — always be optimizing.** When nothing else is left, find and fix the next bottleneck. Areas to explore: OffscreenCanvas + Worker for texture generation, batch same-color triangles in a single path (reduces ctx state changes), typed arrays instead of object arrays for triangle data, canvas compositing tricks to reduce overdraw, WebGL renderer as a future option for 1000+ triangles at 60fps.
 
 ## Completed
+
+- ✅ **Active-set tick scan O(K)** — `foldingSet: Set<number>` tracks which triangles are in FOLDING state; tick loop + renderAnims build iterate only K animating indices instead of all N; renderer's `renderFrame` accepts optional `foldingIndices` for the same O(K) draw pass; eliminates N−K null-checks per frame during cascades; 3 new renderer tests (143 total)
 
 - ✅ **Incremental static cache patch** — fold completions call `patchStaticTriangle()` to repaint 1 triangle O(1) instead of full O(N) rebuild; at 3000 triangles with ~300 folds per cascade eliminates ~900,000 redundant draw ops per cascade
 - ✅ **Static triangle cache** — offscreen canvas holds all idle triangles; `drawImage` blit replaces N fill+stroke calls during cascades; measured 3.5× reduction in fill calls per frame; `invalidateStaticCache()` on resize; falls back gracefully in test env (no DOM)

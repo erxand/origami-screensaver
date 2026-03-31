@@ -218,3 +218,51 @@ describe('patchStaticTriangle', () => {
     expect(() => r.invalidateStaticCache()).not.toThrow();
   });
 });
+
+describe('renderFrame with foldingIndices (active-set O(K) path)', () => {
+  it('renders without error when foldingIndices set is provided', () => {
+    const ctx = mockCtx();
+    const r = createRenderer(ctx);
+    const triangles = [
+      { points: [[0, 0], [10, 0], [5, 8]] },
+      { points: [[10, 0], [20, 0], [15, 8]] },
+    ];
+    const colors = ['#aaa', '#bbb'];
+    const animStates = [
+      { progress: 0.3, oldColor: '#aaa', newColor: '#ccc', foldEdgeIdx: 0 },
+      null,
+    ];
+    const foldingIndices = new Set([0]);
+    expect(() => r.renderFrame(triangles, colors, animStates, undefined, foldingIndices)).not.toThrow();
+  });
+
+  it('calls fill for animating triangle when foldingIndices provided', () => {
+    const ctx = mockCtx();
+    const r = createRenderer(ctx);
+    const triangles = [
+      { points: [[0, 0], [10, 0], [5, 8]] },
+      { points: [[10, 0], [20, 0], [15, 8]] },
+    ];
+    const colors = ['#aaa', '#bbb'];
+    const animStates = [
+      { progress: 0.3, oldColor: '#aaa', newColor: '#ccc', foldEdgeIdx: 0 },
+      null,
+    ];
+    const foldingIndices = new Set([0]);
+    r.renderFrame(triangles, colors, animStates, undefined, foldingIndices);
+    // Should have drawn at least 1 fill (the animating triangle)
+    expect(ctx.fill.mock.calls.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('empty foldingIndices set produces a clean frame (only static + texture)', () => {
+    const ctx = mockCtx();
+    const r = createRenderer(ctx);
+    const triangles = [
+      { points: [[0, 0], [10, 0], [5, 8]] },
+    ];
+    const colors = ['#aaa'];
+    const foldingIndices = new Set<number>();
+    // Should draw all triangles via full fallback (test env, no DOM)
+    expect(() => r.renderFrame(triangles, colors, null, '#aaa', foldingIndices)).not.toThrow();
+  });
+});

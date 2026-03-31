@@ -62,6 +62,10 @@ export function createScreensaver(canvas: HTMLCanvasElement, options: Screensave
   let dirty = true;
   let activeAnimCount = 0; // triangles currently folding
 
+  // Active-set tracking: indices of triangles in FOLDING state (pending or animating).
+  // Maintained alongside animStates so tick loops scan O(K) instead of O(N).
+  let foldingSet: Set<number> = new Set();
+
   // Palette overlay
   let paletteOverlayTimer = 0;
   let paletteOverlayText = '';
@@ -93,6 +97,7 @@ export function createScreensaver(canvas: HTMLCanvasElement, options: Screensave
     colors = new Array(grid.triangles.length).fill(currentColor);
     renderAnims = new Array(grid.triangles.length).fill(null);
     activeCascades = [];
+    foldingSet = new Set();
     // Grid changed — static cache must be rebuilt from scratch
     renderer.invalidateStaticCache();
   }
@@ -129,6 +134,7 @@ export function createScreensaver(canvas: HTMLCanvasElement, options: Screensave
         foldEdgeIdx,
         foldDuration
       );
+      foldingSet.add(entry.index);
     }
 
     const maxScheduleStart = schedule.length > 0
@@ -177,39 +183,48 @@ export function createScreensaver(canvas: HTMLCanvasElement, options: Screensave
       waitingUntil = now + nextWait;
     }
 
-    // Update animating triangles
+    // Update animating triangles — O(K) via foldingSet (K = folding count, not N total)
     let prevActiveCount = activeAnimCount;
     activeAnimCount = 0;
-    for (let i = 0; i < animStates.length; i++) {
+    const completedThisTick: number[] = [];
+    for (const i of foldingSet) {
       const anim = animStates[i];
-      if (anim.state === State.FOLDING) {
-        // Check if the fold has started yet (startTime may be in the future)
-        if (anim.startTime <= now) {
-          const done = updateAnim(anim, now);
-          if (done) {
-            colors[i] = anim.newColor!;
-            resetAnim(anim);
-            // Patch just this one triangle in the static cache (O(1) vs O(N) rebuild)
-            renderer.patchStaticTriangle(grid.triangles[i], colors[i], i);
-            dirty = true;
-          } else {
-            activeAnimCount++;
-            dirty = true;
-          }
+      if (anim.state !== State.FOLDING) {
+        // Stale entry (e.g. from a grid rebuild) — prune it
+        completedThisTick.push(i);
+        continue;
+      }
+      // Check if the fold has started yet (startTime may be in the future)
+      if (anim.startTime <= now) {
+        const done = updateAnim(anim, now);
+        if (done) {
+          colors[i] = anim.newColor!;
+          resetAnim(anim);
+          // Patch just this one triangle in the static cache (O(1) vs O(N) rebuild)
+          renderer.patchStaticTriangle(grid.triangles[i], colors[i], i);
+          completedThisTick.push(i);
+          dirty = true;
         } else {
-          // Pending (not yet started) — still counts as active work
           activeAnimCount++;
+          dirty = true;
         }
+      } else {
+        // Pending (not yet started) — still counts as active work
+        activeAnimCount++;
       }
     }
+    for (const i of completedThisTick) foldingSet.delete(i);
 
     // Mark dirty when transition from active → idle (need one final clean frame)
     if (prevActiveCount > 0 && activeAnimCount === 0) dirty = true;
 
     // Build render array and render only when dirty
     if (dirty || paletteOverlayTimer > 0) {
-      // Build render array (reuse objects to avoid allocations)
-      for (let i = 0; i < animStates.length; i++) {
+      // Clear previous renderAnims for completed triangles from last tick
+      for (const i of completedThisTick) renderAnims[i] = null;
+
+      // Build render array — O(K) via foldingSet (only animating entries)
+      for (const i of foldingSet) {
         const a = animStates[i];
         if (a.state === State.FOLDING && a.startTime <= now) {
           if (!renderAnims[i]) renderAnims[i] = {} as RenderAnimState;
@@ -223,7 +238,7 @@ export function createScreensaver(canvas: HTMLCanvasElement, options: Screensave
         }
       }
 
-      renderer.renderFrame(grid.triangles, colors, renderAnims, currentColor);
+      renderer.renderFrame(grid.triangles, colors, renderAnims, currentColor, foldingSet);
 
       if (paletteOverlayTimer > 0) {
         drawPaletteOverlay(paletteOverlayText);

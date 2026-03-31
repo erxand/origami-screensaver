@@ -493,11 +493,14 @@ export function createRenderer(ctx: CanvasRenderingContext2D) {
      * Hot path (during cascade):
      *   1. Rebuild static cache if dirty (only idle triangles, ~once per fold completion)
      *   2. Blit static cache (one drawImage call)
-     *   3. Draw only the K animating triangles on top
+     *   3. Draw only the K animating triangles on top  ← O(K) when foldingIndices provided
      *   4. Apply global paper texture overlay
      *
      * This reduces per-frame fill+stroke calls from N → K (the animating set),
      * which during a cascade is typically 10–60× fewer than the full grid.
+     *
+     * Pass `foldingIndices` (the active-set from screensaver.ts) to skip the O(N) scan
+     * over `animStates` and iterate directly over the K animating indices.
      *
      * Fallback (no DOM / test env): draws all triangles as before.
      */
@@ -505,7 +508,8 @@ export function createRenderer(ctx: CanvasRenderingContext2D) {
       triangles: Triangle[],
       colors: string[],
       animStates: (RenderAnimState | null)[] | null,
-      bgColor?: string
+      bgColor?: string,
+      foldingIndices?: Set<number>
     ): void {
       const w = ctx.canvas.clientWidth || ctx.canvas.width;
       const h = ctx.canvas.clientHeight || ctx.canvas.height;
@@ -514,7 +518,14 @@ export function createRenderer(ctx: CanvasRenderingContext2D) {
 
       // Check if there are any animating triangles
       let hasAnim = false;
-      if (animStates) {
+      if (foldingIndices) {
+        // O(K) — caller already knows which triangles are animating
+        for (const i of foldingIndices) {
+          const a = animStates ? animStates[i] : null;
+          if (a && a.progress > 0 && a.progress < 1.15) { hasAnim = true; break; }
+        }
+      } else if (animStates) {
+        // O(N) fallback when no active-set provided
         for (let i = 0; i < animStates.length; i++) {
           const a = animStates[i];
           if (a && a.progress > 0 && a.progress < 1.15) { hasAnim = true; break; }
@@ -535,19 +546,36 @@ export function createRenderer(ctx: CanvasRenderingContext2D) {
         ctx.clip();
         ctx.drawImage(staticCanvas, 0, 0);
 
-        // Draw only animating triangles on top
+        // Draw only animating triangles on top — O(K) when foldingIndices provided
         if (hasAnim && animStates) {
-          for (let i = 0; i < triangles.length; i++) {
-            const anim = animStates[i];
-            if (!anim || anim.progress <= 0 || anim.progress >= 1.15) continue;
-            this.drawFoldingTriangle(
-              triangles[i].points as [number, number][],
-              anim.oldColor,
-              anim.newColor,
-              anim.progress,
-              anim.foldEdgeIdx,
-              i
-            );
+          if (foldingIndices) {
+            // O(K): iterate the active set directly
+            for (const i of foldingIndices) {
+              const anim = animStates[i];
+              if (!anim || anim.progress <= 0 || anim.progress >= 1.15) continue;
+              this.drawFoldingTriangle(
+                triangles[i].points as [number, number][],
+                anim.oldColor,
+                anim.newColor,
+                anim.progress,
+                anim.foldEdgeIdx,
+                i
+              );
+            }
+          } else {
+            // O(N) fallback
+            for (let i = 0; i < triangles.length; i++) {
+              const anim = animStates[i];
+              if (!anim || anim.progress <= 0 || anim.progress >= 1.15) continue;
+              this.drawFoldingTriangle(
+                triangles[i].points as [number, number][],
+                anim.oldColor,
+                anim.newColor,
+                anim.progress,
+                anim.foldEdgeIdx,
+                i
+              );
+            }
           }
         }
 

@@ -338,6 +338,118 @@ function benchMemoryPerFrame(triCount: number, frames = 100) {
 }
 
 // ---------------------------------------------------------------------------
+// Benchmark: active-set tick-scan speedup (O(K) vs O(N))
+// Compares O(N) full-scan tick loop vs O(K) active-set iteration.
+// At 3000 triangles with ~300 animating, we expect ~10× fewer iterations.
+// ---------------------------------------------------------------------------
+function benchActiveSetTickScan(triCount: number, frames = 300): {
+  targetTriangles: number;
+  actualTriangles: number;
+  animatingCount: number;
+  avgFullScanMs: number;
+  avgActiveSetMs: number;
+  speedupRatio: number;
+} {
+  const side = Math.max(40, Math.round(Math.sqrt((1920 * 1080 * Math.sqrt(3)) / (4 * triCount))));
+  const grid = createGrid(1920, 1080, side);
+  const adjacency = buildAdjacency(grid.rows, grid.cols);
+  const actualCount = grid.triangles.length;
+
+  const colors = new Array<string>(actualCount).fill('#f8c3cd');
+  const animStates1 = createAnimStates(actualCount);
+  const animStates2 = createAnimStates(actualCount);
+  const renderAnims: (Record<string, unknown> | null)[] = new Array(actualCount).fill(null);
+
+  const originIdx = Math.floor(actualCount / 2);
+  const schedule = buildCascadeSchedule(originIdx, adjacency, 60);
+  const baseTime = 1000;
+
+  // Build active set
+  const foldingSet = new Set<number>();
+  for (const entry of schedule) {
+    const tri = grid.triangles[entry.index];
+    let foldEdgeIdx = 0;
+    if (entry.parentIdx >= 0) {
+      foldEdgeIdx = findFoldEdge(tri, grid.triangles[entry.parentIdx]);
+    }
+    startFold(animStates1[entry.index], baseTime + entry.startTime, '#bbb', colors[entry.index], foldEdgeIdx, 400);
+    startFold(animStates2[entry.index], baseTime + entry.startTime, '#bbb', colors[entry.index], foldEdgeIdx, 400);
+    foldingSet.add(entry.index);
+  }
+  const animatingCount = foldingSet.size;
+
+  // Measure O(N) full-scan
+  const fullScanTimes: number[] = [];
+  for (let f = 0; f < frames; f++) {
+    const now = baseTime + f * 16.67;
+    const t0 = performance.now();
+    for (let i = 0; i < actualCount; i++) {
+      const anim = animStates1[i];
+      if (anim.state === State.FOLDING && anim.startTime <= now) {
+        const done = updateAnim(anim, now);
+        if (done) { colors[i] = anim.newColor!; resetAnim(anim); }
+      }
+    }
+    for (let i = 0; i < actualCount; i++) {
+      const a = animStates1[i];
+      if (a.state === State.FOLDING && a.startTime <= now) {
+        if (!renderAnims[i]) renderAnims[i] = {};
+        const ra = renderAnims[i]!;
+        ra['progress'] = a.progress; ra['oldColor'] = a.oldColor;
+        ra['newColor'] = a.newColor; ra['foldEdgeIdx'] = a.foldEdgeIdx;
+      } else {
+        renderAnims[i] = null;
+      }
+    }
+    fullScanTimes.push(performance.now() - t0);
+  }
+
+  const colors2 = new Array<string>(actualCount).fill('#f8c3cd');
+  const renderAnims2: (Record<string, unknown> | null)[] = new Array(actualCount).fill(null);
+
+  // Measure O(K) active-set
+  const activeSetTimes: number[] = [];
+  for (let f = 0; f < frames; f++) {
+    const now = baseTime + f * 16.67;
+    const t0 = performance.now();
+    const completed: number[] = [];
+    for (const i of foldingSet) {
+      const anim = animStates2[i];
+      if (anim.state !== State.FOLDING) { completed.push(i); continue; }
+      if (anim.startTime <= now) {
+        const done = updateAnim(anim, now);
+        if (done) { colors2[i] = anim.newColor!; resetAnim(anim); completed.push(i); }
+      }
+    }
+    for (const i of completed) { foldingSet.delete(i); renderAnims2[i] = null; }
+    for (const i of foldingSet) {
+      const a = animStates2[i];
+      if (a.state === State.FOLDING && a.startTime <= now) {
+        if (!renderAnims2[i]) renderAnims2[i] = {};
+        const ra = renderAnims2[i]!;
+        ra['progress'] = a.progress; ra['oldColor'] = a.oldColor;
+        ra['newColor'] = a.newColor; ra['foldEdgeIdx'] = a.foldEdgeIdx;
+      } else {
+        renderAnims2[i] = null;
+      }
+    }
+    activeSetTimes.push(performance.now() - t0);
+  }
+
+  const avgFull = fullScanTimes.reduce((a, b) => a + b, 0) / fullScanTimes.length;
+  const avgActive = activeSetTimes.reduce((a, b) => a + b, 0) / activeSetTimes.length;
+
+  return {
+    targetTriangles: triCount,
+    actualTriangles: actualCount,
+    animatingCount,
+    avgFullScanMs: avgFull,
+    avgActiveSetMs: avgActive,
+    speedupRatio: avgFull / Math.max(avgActive, 0.0001),
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Run all benchmarks
 // ---------------------------------------------------------------------------
 function run(): void {
@@ -404,7 +516,19 @@ function run(): void {
     console.log();
   }
 
-  // 4. Idle frame cost
+  // 4b. Active-set tick-scan speedup
+  console.log('--- Active-Set Tick Scan: O(K) vs O(N) ---');
+  console.log();
+  for (const count of triangleCounts) {
+    const r = benchActiveSetTickScan(count);
+    console.log(`  ${r.actualTriangles} triangles (target ${count}), ${r.animatingCount} animating:`);
+    console.log(`    O(N) full scan:   ${(r.avgFullScanMs * 1000).toFixed(1)} µs/frame`);
+    console.log(`    O(K) active set:  ${(r.avgActiveSetMs * 1000).toFixed(1)} µs/frame`);
+    console.log(`    Speedup:          ${r.speedupRatio.toFixed(1)}×`);
+    console.log();
+  }
+
+  // 5. Idle frame cost
   console.log('--- Idle Frame Cost (dirty-flag skip, no animation) ---');
   console.log();
   for (const count of triangleCounts) {
