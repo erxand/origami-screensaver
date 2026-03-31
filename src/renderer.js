@@ -129,12 +129,16 @@ function generatePaperTexture() {
   canvas.height = SIZE;
   const pctx = canvas.getContext('2d');
 
-  // Layer 1: random grain dots at low opacity
-  for (let i = 0; i < 1200; i++) {
+  // Layer 1: dense random grain dots — heavier for construction-paper roughness
+  for (let i = 0; i < 6000; i++) {
     const x = Math.random() * SIZE;
     const y = Math.random() * SIZE;
-    const opacity = 0.08 + Math.random() * 0.10; // 0.03–0.08
-    pctx.fillStyle = `rgba(255,255,255,${opacity})`;
+    const opacity = 0.06 + Math.random() * 0.18; // denser, more visible
+    // Mix light and dark flecks for realistic paper grain
+    const isLight = Math.random() > 0.4;
+    pctx.fillStyle = isLight
+      ? `rgba(255,255,255,${opacity})`
+      : `rgba(0,0,0,${opacity * 0.6})`;
     pctx.fillRect(x, y, 1, 1);
   }
 
@@ -143,14 +147,14 @@ function generatePaperTexture() {
   for (const angle of fiberAngles) {
     const cos = Math.cos(angle);
     const sin = Math.sin(angle);
-    const count = angle === 0 ? 35 : 22;
+    const count = angle === 0 ? 80 : 55; // more fibers
     for (let i = 0; i < count; i++) {
       const sx = Math.random() * SIZE;
       const sy = Math.random() * SIZE;
-      const len = SIZE * (0.4 + Math.random() * 0.6);
-      const opacity = 0.015 + Math.random() * 0.02;
+      const len = SIZE * (0.15 + Math.random() * 0.4); // shorter, denser fibers
+      const opacity = 0.04 + Math.random() * 0.08; // more visible
       pctx.strokeStyle = `rgba(255,255,255,${opacity})`;
-      pctx.lineWidth = 0.4 + Math.random() * 0.4;
+      pctx.lineWidth = 0.3 + Math.random() * 0.5;
       pctx.beginPath();
       pctx.moveTo(sx, sy);
       const drift = (Math.random() - 0.5) * 1.5;
@@ -200,19 +204,7 @@ export function createRenderer(ctx) {
    * @param {string} fillColor - The hex fill color of this triangle (used to derive crease color).
    */
   function applyDepthShading(points, fillColor) {
-    // Bounding box for gradient endpoints
-    const x0 = Math.min(points[0][0], points[1][0], points[2][0]);
-    const y0 = Math.min(points[0][1], points[1][1], points[2][1]);
-    const x1 = Math.max(points[0][0], points[1][0], points[2][0]);
-    const y1 = Math.max(points[0][1], points[1][1], points[2][1]);
-
-    // Diagonal gradient: light upper-left → darker lower-right
-    const grad = ctx.createLinearGradient(x0, y0, x1, y1);
-    grad.addColorStop(0, 'rgba(255,255,255,0.11)');
-    grad.addColorStop(0.5, 'rgba(255,255,255,0.00)');
-    grad.addColorStop(1, 'rgba(0,0,0,0.09)');
-    ctx.fillStyle = grad;
-    ctx.fill();
+    // No gradient — flat fill only (Kami 2 style: uniform color per triangle, no sheen)
 
     // Paper texture overlay
     if (paperPattern) {
