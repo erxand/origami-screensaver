@@ -140,13 +140,13 @@ Press `P` to cycle palettes with a HUD overlay.
 
 ## Roadmap
 
-- [ ] macOS `.saver` bundle via WKWebView
 - [ ] **[ONGOING] Performance — always be optimizing.** When nothing else is left, find and fix the next bottleneck. Areas to explore: offscreen canvas + `drawImage` for static triangles (only re-render animating ones), OffscreenCanvas + Worker for texture generation, reduce canvas state changes (batch same-color triangles), typed arrays instead of object arrays for triangle data, canvas compositing tricks to reduce overdraw, WebGL renderer as a future option for 1000+ triangles at 60fps.
 
 ## Completed
 
 - ✅ **Fix edge bleed** — fill canvas with current screensaver color before drawing triangles; eliminates black gaps at canvas edges
 - ✅ **TypeScript migration** — all `src/*.ts` + `tests/*.test.ts`; `tsconfig.json` strict mode; shared interfaces in `src/types.ts` (Triangle, AnimState, GridResult, CascadeEntry, ParsedConfig, etc.); also fixed pre-existing flaky cascade test
+- ✅ **macOS `.saver` bundle** — WKWebView wrapper in `macos/`; Swift compiled with CLT swiftc (no Xcode required); `macos/build.sh` for one-shot build → `OrigamiScreensaver.saver`; verified Mach-O 64-bit bundle arm64
 - ✅ **Visual regression tests** — headless time-simulation (sim.ts): stuck-triangle detection, cascade completion, 5-min stability, multi-cascade concurrency; 10 tests
 - ✅ Equilateral triangle grid with full-screen tiling
 - ✅ Fluid fold animation (cubic ease-in-out + spring overshoot)
