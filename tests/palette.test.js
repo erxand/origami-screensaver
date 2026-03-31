@@ -86,4 +86,26 @@ describe('createPaletteCycler', () => {
     }
     expect(cycler.currentPaletteName()).toBe('sakura');
   });
+
+  it('setPaletteByIndex jumps to a specific palette', () => {
+    const cycler = createPaletteCycler(0);
+    cycler.setPaletteByIndex(2);
+    expect(cycler.currentPaletteName()).toBe(PALETTE_NAMES[2]);
+    expect(cycler.currentColor()).toBe(PALETTES[PALETTE_NAMES[2]][0]);
+  });
+
+  it('setPaletteByIndex wraps on out-of-bounds', () => {
+    const cycler = createPaletteCycler(0);
+    cycler.setPaletteByIndex(PALETTE_NAMES.length);
+    expect(cycler.currentPaletteName()).toBe(PALETTE_NAMES[0]);
+  });
+
+  it('currentPaletteIndex returns the current index', () => {
+    const cycler = createPaletteCycler(1);
+    expect(cycler.currentPaletteIndex()).toBe(1);
+    cycler.nextPalette();
+    expect(cycler.currentPaletteIndex()).toBe(2 % PALETTE_NAMES.length);
+    cycler.setPaletteByIndex(0);
+    expect(cycler.currentPaletteIndex()).toBe(0);
+  });
 });

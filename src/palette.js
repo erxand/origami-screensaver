@@ -52,6 +52,17 @@ export function createPaletteCycler(startPaletteIdx = 0) {
       colorIdx = 0;
     },
 
+    /** Jump to a specific palette by index, resetting color index. */
+    setPaletteByIndex(idx) {
+      paletteIdx = ((idx % PALETTE_NAMES.length) + PALETTE_NAMES.length) % PALETTE_NAMES.length;
+      colorIdx = 0;
+    },
+
+    /** Get current palette index. */
+    currentPaletteIndex() {
+      return paletteIdx;
+    },
+
     /** Pick a random color from the current palette that isn't the given color. */
     randomColorExcluding(excludeColor) {
       const pal = this.currentPalette();

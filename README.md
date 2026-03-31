@@ -139,9 +139,8 @@ Press `P` to cycle palettes with a HUD overlay.
 
 ## Roadmap
 
-- [ ] **Kami 2-style triangle rendering** — See reference image. Key changes needed: (1) **Remove hard borders entirely** — no black or fixed-color strokes between triangles. The only edge definition comes from shading. (2) **Color-relative edge shading** — the crease between triangles is a 1px line that is ~15-20% darker than the triangle's own color (not black). Within same-color regions this should be nearly invisible. (3) **Per-triangle value variation** — neighboring triangles of the same color should be subtly different shades (±5-10% lightness variation per triangle, consistent across redraws — seed from triangle index). This gives the faceted paper-cube look. (4) **Directional lighting** — upward triangles (▲) should be slightly lighter than downward triangles (▽) of the same color, simulating a light source from above-left. (5) **Stronger visible grain** — the paper fiber texture should be more visible, running at the triangle's natural grain direction.
-- [ ] **Visual regression + stuck-color test** — The main bug to catch: triangles getting stuck in mixed/wrong colors between cascades (some triangles showing color A, some color B, some a third color C — when the whole screen should be uniform). Test approach: (1) Run headless Playwright for 5 minutes, capturing a frame every 2s. (2) After each cascade COMPLETES (detected by watching for a stable frame with no animation), analyze the pixel colors — count distinct color clusters. If more than 1 dominant color remains after a cascade is done, that's a stuck-color bug. (3) Also capture a contact sheet of all 150 frames for visual review. (4) Log any stuck-color frames with timestamp + screenshot. This should be a proper `npm run test:stuck` that exits non-zero if stuck colors are detected. Use Playwright + canvas pixel sampling (not screenshot pixel analysis — read triangle state directly from JS if possible via `page.evaluate`).
-- [ ] **Live param tweaker** — press `C` (for config) to toggle a live controls overlay. Sliders/inputs for: speed, wait time, triangle size, cascade count, palette picker. Changes apply instantly without reloading. Should also show current FPS counter. Keyboard shortcuts for common things: `+`/`-` for speed, `[`/`]` for triangle size, `P` already cycles palette.
+- [ ] **Kami 2-style triangle rendering** — remove hard black borders; color-relative edge shading; per-triangle lightness variation seeded from index; directional lighting (▲ lighter than ▽); stronger visible grain
+- [ ] **Visual regression + stuck-color test** — headless Playwright run for 5 min, frame every 2s, detect stuck mixed colors after cascade completes; `npm run test:stuck`
 - [ ] macOS `.saver` bundle via WKWebView
 
 ## Completed
@@ -149,19 +148,19 @@ Press `P` to cycle palettes with a HUD overlay.
 - ✅ Equilateral triangle grid with full-screen tiling
 - ✅ Fluid fold animation (cubic ease-in-out + spring overshoot)
 - ✅ BFS cascade propagation with smooth per-triangle stagger
-- ✅ **Variable cascade easing** — ease-in-out cubic on the wave timing (slow near origin, fast through bulk, graceful deceleration at edges)
-- ✅ Paper texture (pre-generated noise + multi-angle fibers matching equilateral grain)
-- ✅ **Paper depth shading** — diagonal gradient (light upper-left → dark lower-right) + thin crease stroke per triangle for tactile 3D feel
+- ✅ Variable cascade easing — ease-in-out cubic on wave timing
+- ✅ Paper texture — pre-generated noise + multi-angle fibers matching equilateral grain
+- ✅ Paper depth shading — diagonal gradient + thin crease stroke per triangle
 - ✅ 3 built-in palettes (Sakura, Ocean, Ember)
 - ✅ Palette picker overlay (press `P`)
 - ✅ Multiple simultaneous cascades (up to 2 overlapping waves)
-- ✅ Performance benchmarking (`npm run benchmark`) — fixed headless mock ctx
+- ✅ Performance benchmarking (`npm run benchmark`) — headless, reports FPS + bottlenecks
 - ✅ Dirty-flag rendering (skip unchanged triangles)
 - ✅ URL params config (`?palette=ocean&speed=2&size=60&density=1000&cascades=2&wait=8000`)
-- ✅ 105 tests across 8 test files
-- ✅ **BUG FIX: Edge artifacts** — canvas clip rect prevents black zigzag borders on viewport edges
-- ✅ **BUG FIX: Fold animation now clearly visible** — proper axis reflection, 600ms duration, strong crease shadow, spring overshoot renders visually
-- ✅ **Edge fold behavior** — triangles near viewport boundaries fold along their screen-adjacent edge (paper peeling off the wall), 111 tests
+- ✅ BUG FIX: Edge artifacts — canvas clip rect prevents black zigzag borders
+- ✅ BUG FIX: Fold animation clearly visible — proper axis reflection, 600ms, spring overshoot
+- ✅ Edge fold behavior — viewport-boundary triangles peel along screen edge
+- ✅ **Live controls overlay** — press `C` to toggle: sliders for speed/pause/size/cascades, palette buttons, live FPS; `+`/`-` for speed steps; 114 tests
 
 ## License
 
