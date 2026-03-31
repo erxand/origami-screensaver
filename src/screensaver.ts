@@ -27,6 +27,8 @@ interface ActiveCascade {
   schedule: CascadeEntry[];
   startTime: number;
   newColor: string;
+  /** Pre-computed max startTime in schedule — avoids O(N) reduce() every tick. */
+  maxScheduleStart: number;
 }
 
 export function createScreensaver(canvas: HTMLCanvasElement, options: ScreensaverOptions = {}) {
@@ -91,6 +93,8 @@ export function createScreensaver(canvas: HTMLCanvasElement, options: Screensave
     colors = new Array(grid.triangles.length).fill(currentColor);
     renderAnims = new Array(grid.triangles.length).fill(null);
     activeCascades = [];
+    // Grid changed — static cache must be rebuilt from scratch
+    renderer.invalidateStaticCache();
   }
 
   function startCascade(now: number, forcedColor?: string): void {
@@ -127,8 +131,11 @@ export function createScreensaver(canvas: HTMLCanvasElement, options: Screensave
       );
     }
 
+    const maxScheduleStart = schedule.length > 0
+      ? schedule[schedule.length - 1].startTime
+      : 0;
     dirty = true;
-    activeCascades.push({ schedule, startTime: now, newColor });
+    activeCascades.push({ schedule, startTime: now, newColor, maxScheduleStart });
     currentColor = newColor;
   }
 
@@ -158,11 +165,10 @@ export function createScreensaver(canvas: HTMLCanvasElement, options: Screensave
     if (!running) return;
     trackFPS(now);
 
-    // Prune completed cascades
-    activeCascades = activeCascades.filter(cascade => {
-      const maxStart = cascade.schedule.reduce((m: number, e: CascadeEntry) => Math.max(m, e.startTime), 0);
-      return now < cascade.startTime + maxStart + foldDuration + 50;
-    });
+    // Prune completed cascades (use pre-computed maxScheduleStart — no O(N) reduce per tick)
+    activeCascades = activeCascades.filter(cascade =>
+      now < cascade.startTime + cascade.maxScheduleStart + foldDuration + 50
+    );
 
     // Start new cascade if under limit and wait has elapsed
     if (activeCascades.length < maxConcurrent && now >= waitingUntil) {
@@ -183,6 +189,8 @@ export function createScreensaver(canvas: HTMLCanvasElement, options: Screensave
           if (done) {
             colors[i] = anim.newColor!;
             resetAnim(anim);
+            // Triangle committed its new color — static cache is now stale
+            renderer.invalidateStaticCache();
             dirty = true;
           } else {
             activeAnimCount++;

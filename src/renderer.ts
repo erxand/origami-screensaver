@@ -194,6 +194,13 @@ function generatePaperTexture(): HTMLCanvasElement {
 
 /**
  * Create a renderer bound to a canvas context.
+ *
+ * Static triangle cache (offscreen canvas):
+ *   All idle triangles are painted onto `staticCanvas` once. During a cascade,
+ *   the hot path blits the static layer then draws only the K animating triangles
+ *   on top, reducing per-frame draw calls from N to K (typically 10-60× fewer).
+ *   The cache is rebuilt whenever `invalidateStaticCache()` is called — i.e. when
+ *   a triangle finishes folding (its committed color changed) or on resize.
  */
 export function createRenderer(ctx: CanvasRenderingContext2D) {
   // Pre-create paper texture pattern once at startup
@@ -205,10 +212,90 @@ export function createRenderer(ctx: CanvasRenderingContext2D) {
     // In test environments, document may not exist
   }
 
+  // Offscreen canvas for static (idle) triangles
+  let staticCanvas: HTMLCanvasElement | null = null;
+  let staticCtx: CanvasRenderingContext2D | null = null;
+  let staticDirty = true;
+  let staticWidth = 0;
+  let staticHeight = 0;
 
+  /** Force a full static-cache rebuild on the next renderFrame call. */
+  function invalidateStaticCache(): void {
+    staticDirty = true;
+  }
 
   /**
-   * Trace the triangle path (shared between fill passes).
+   * Ensure the offscreen canvas exists and matches the current output size.
+   */
+  function ensureStaticCanvas(w: number, h: number): void {
+    try {
+      if (!staticCanvas) {
+        staticCanvas = document.createElement('canvas');
+        staticCtx = staticCanvas.getContext('2d');
+      }
+      if (staticWidth !== w || staticHeight !== h) {
+        staticCanvas.width = w;
+        staticCanvas.height = h;
+        staticWidth = w;
+        staticHeight = h;
+        staticDirty = true;
+      }
+    } catch (_) {
+      // No DOM in test environments — static cache disabled
+    }
+  }
+
+  /**
+   * Rebuild the static cache by drawing all idle triangles onto staticCtx.
+   */
+  function rebuildStaticCache(
+    triangles: Triangle[],
+    colors: string[],
+    animStates: (RenderAnimState | null)[] | null,
+    bgColor: string | undefined,
+    w: number,
+    h: number,
+  ): void {
+    if (!staticCtx || !staticCanvas) return;
+    const sc = staticCtx;
+
+    // Fill background
+    if (bgColor) {
+      sc.fillStyle = bgColor;
+      sc.fillRect(0, 0, w, h);
+    } else {
+      sc.clearRect(0, 0, w, h);
+    }
+
+    sc.save();
+    sc.beginPath();
+    sc.rect(0, 0, w, h);
+    sc.clip();
+
+    // Draw every triangle that is NOT currently animating
+    for (let i = 0; i < triangles.length; i++) {
+      const anim = animStates ? animStates[i] : null;
+      if (anim && anim.progress > 0 && anim.progress < 1.15) continue; // animating — skip
+      const pts = triangles[i].points as [number, number][];
+      const variedColor = applyTriVariation(colors[i], i);
+      sc.beginPath();
+      sc.moveTo(pts[0][0], pts[0][1]);
+      sc.lineTo(pts[1][0], pts[1][1]);
+      sc.lineTo(pts[2][0], pts[2][1]);
+      sc.closePath();
+      sc.fillStyle = variedColor;
+      sc.fill();
+      sc.strokeStyle = creaseColor(variedColor);
+      sc.lineWidth = 0.7;
+      sc.stroke();
+    }
+
+    sc.restore();
+    staticDirty = false;
+  }
+
+  /**
+   * Trace the triangle path onto the main context (shared between fill passes).
    */
   function tracePath(points: [number, number][]): void {
     ctx.beginPath();
@@ -219,11 +306,11 @@ export function createRenderer(ctx: CanvasRenderingContext2D) {
   }
 
   /**
-   * Apply crease stroke to an already-traced path.
-   * Paper texture is no longer applied per-triangle; it's applied once per frame
-   * over the entire canvas (see renderFrame) for a 3-5x reduction in save/restore calls.
+   * Apply crease stroke to an already-traced path on the main context.
+   * Note: `points` parameter was removed — it was never read inside this function;
+   * removing it eliminates 2 array allocations per folding-triangle per frame.
    */
-  function applyDepthShading(points: [number, number][], fillColor: string): void {
+  function applyDepthShading(fillColor: string): void {
     // Crease stroke: color-relative (18% darker than fill) → near-invisible within same-color regions.
     const stroke = fillColor ? creaseColor(fillColor) : 'rgba(0,0,0,0.09)';
     ctx.strokeStyle = stroke;
@@ -247,6 +334,12 @@ export function createRenderer(ctx: CanvasRenderingContext2D) {
   return {
     ctx,
 
+    /**
+     * Notify the renderer that committed triangle colors have changed (a fold completed).
+     * Forces the static cache to rebuild on the next frame.
+     */
+    invalidateStaticCache,
+
     /** Clear the entire canvas, optionally filling with a background color. */
     clear(bgColor?: string): void {
       if (bgColor) {
@@ -265,7 +358,7 @@ export function createRenderer(ctx: CanvasRenderingContext2D) {
       tracePath(points);
       ctx.fillStyle = variedColor;
       ctx.fill();
-      applyDepthShading(points, variedColor);
+      applyDepthShading(variedColor);
     },
 
     /**
@@ -316,7 +409,7 @@ export function createRenderer(ctx: CanvasRenderingContext2D) {
         tracePath(points);
         ctx.fillStyle = variedNew;
         ctx.fill();
-        applyDepthShading(points, variedNew);
+        applyDepthShading(variedNew);
 
         // Draw the folding flap
         if (scale > 0.005) {
@@ -329,7 +422,7 @@ export function createRenderer(ctx: CanvasRenderingContext2D) {
           ctx.fill();
           ctx.fillStyle = darkenString(phase * 0.85);
           ctx.fill();
-          applyDepthShading([edgeP0, edgeP1, [foldedApexX, foldedApexY]], variedOld);
+          applyDepthShading(variedOld);
         }
       } else {
         // Second half (+ overshoot): new color face unfolding from edge onto new position
@@ -342,7 +435,7 @@ export function createRenderer(ctx: CanvasRenderingContext2D) {
         tracePath(points);
         ctx.fillStyle = variedNew;
         ctx.fill();
-        applyDepthShading(points, variedNew);
+        applyDepthShading(variedNew);
 
         // Draw the folding flap coming down
         if (overshootPhase < 1.0) {
@@ -355,17 +448,24 @@ export function createRenderer(ctx: CanvasRenderingContext2D) {
           ctx.fill();
           ctx.fillStyle = darkenString((1 - overshootPhase) * 0.5);
           ctx.fill();
-          applyDepthShading([edgeP0, edgeP1, [foldedApexX, foldedApexY]], variedNew);
+          applyDepthShading(variedNew);
         }
       }
     },
 
     /**
-     * Render the full grid. For each triangle, call the appropriate
-     * draw method based on its animation state.
+     * Render the full grid.
      *
-     * Clipped to canvas bounds to prevent edge artifacts from triangles
-     * that extend slightly beyond the viewport.
+     * Hot path (during cascade):
+     *   1. Rebuild static cache if dirty (only idle triangles, ~once per fold completion)
+     *   2. Blit static cache (one drawImage call)
+     *   3. Draw only the K animating triangles on top
+     *   4. Apply global paper texture overlay
+     *
+     * This reduces per-frame fill+stroke calls from N → K (the animating set),
+     * which during a cascade is typically 10–60× fewer than the full grid.
+     *
+     * Fallback (no DOM / test env): draws all triangles as before.
      */
     renderFrame(
       triangles: Triangle[],
@@ -373,33 +473,78 @@ export function createRenderer(ctx: CanvasRenderingContext2D) {
       animStates: (RenderAnimState | null)[] | null,
       bgColor?: string
     ): void {
-      this.clear(bgColor);
       const w = ctx.canvas.clientWidth || ctx.canvas.width;
       const h = ctx.canvas.clientHeight || ctx.canvas.height;
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(0, 0, w, h);
-      ctx.clip();
-      for (let i = 0; i < triangles.length; i++) {
-        const tri = triangles[i];
-        const anim = animStates ? animStates[i] : null;
-        if (anim && anim.progress > 0 && anim.progress < 1.15) {
-          this.drawFoldingTriangle(
-            tri.points as [number, number][],
-            anim.oldColor,
-            anim.newColor,
-            anim.progress,
-            anim.foldEdgeIdx,
-            i
-          );
-        } else {
-          this.drawTriangle(tri.points as [number, number][], colors[i], i);
+
+      ensureStaticCanvas(w, h);
+
+      // Check if there are any animating triangles
+      let hasAnim = false;
+      if (animStates) {
+        for (let i = 0; i < animStates.length; i++) {
+          const a = animStates[i];
+          if (a && a.progress > 0 && a.progress < 1.15) { hasAnim = true; break; }
         }
       }
-      // Apply paper texture once over the full canvas instead of per-triangle.
-      // Reduces save/restore calls from N×2 to 2 per frame.
-      applyGlobalPaperTexture(w, h);
-      ctx.restore();
+
+      if (staticCanvas && staticCtx) {
+        // --- Static-cache path ---
+        if (staticDirty) {
+          rebuildStaticCache(triangles, colors, animStates, bgColor, w, h);
+        }
+
+        // Blit static layer (one drawImage — replaces N fill+stroke calls)
+        this.clear(bgColor);
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(0, 0, w, h);
+        ctx.clip();
+        ctx.drawImage(staticCanvas, 0, 0);
+
+        // Draw only animating triangles on top
+        if (hasAnim && animStates) {
+          for (let i = 0; i < triangles.length; i++) {
+            const anim = animStates[i];
+            if (!anim || anim.progress <= 0 || anim.progress >= 1.15) continue;
+            this.drawFoldingTriangle(
+              triangles[i].points as [number, number][],
+              anim.oldColor,
+              anim.newColor,
+              anim.progress,
+              anim.foldEdgeIdx,
+              i
+            );
+          }
+        }
+
+        applyGlobalPaperTexture(w, h);
+        ctx.restore();
+      } else {
+        // --- Fallback: full redraw (test environment, no DOM) ---
+        this.clear(bgColor);
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(0, 0, w, h);
+        ctx.clip();
+        for (let i = 0; i < triangles.length; i++) {
+          const tri = triangles[i];
+          const anim = animStates ? animStates[i] : null;
+          if (anim && anim.progress > 0 && anim.progress < 1.15) {
+            this.drawFoldingTriangle(
+              tri.points as [number, number][],
+              anim.oldColor,
+              anim.newColor,
+              anim.progress,
+              anim.foldEdgeIdx,
+              i
+            );
+          } else {
+            this.drawTriangle(tri.points as [number, number][], colors[i], i);
+          }
+        }
+        applyGlobalPaperTexture(w, h);
+        ctx.restore();
+      }
     },
   };
 }
