@@ -139,7 +139,7 @@ Press `P` to cycle palettes with a HUD overlay.
 
 ## Roadmap
 
-- [ ] **Kami 2-style triangle rendering** — remove hard black borders; color-relative edge shading; per-triangle lightness variation seeded from index; directional lighting (▲ lighter than ▽); stronger visible grain
+- [ ] **Kami 2-style triangle rendering** — remove hard black borders; color-relative edge shading (~15-20% darker than triangle color, nearly invisible within same-color regions); per-triangle lightness variation (±5-10%, seeded from triangle index so it's stable — NOT based on up/down orientation, just random-looking variation per tile); stronger visible grain. Note: the reference image was an isometric cube illusion with deliberate 3-value lighting — Kami 2 itself uses subtler random variation, not orientation-based shading.
 - [ ] **Visual regression + stuck-color test** — headless Playwright run for 5 min, frame every 2s, detect stuck mixed colors after cascade completes; `npm run test:stuck`
 - [ ] macOS `.saver` bundle via WKWebView
 
