@@ -139,7 +139,6 @@ Press `P` to cycle palettes with a HUD overlay.
 
 ## Roadmap
 
-- [ ] **Kami 2-style triangle rendering** — remove hard black borders; color-relative edge shading (~15-20% darker than triangle color, nearly invisible within same-color regions); per-triangle lightness variation (±5-10%, seeded from triangle index so it's stable — NOT based on up/down orientation, just random-looking variation per tile); stronger visible grain. Note: the reference image was an isometric cube illusion with deliberate 3-value lighting — Kami 2 itself uses subtler random variation, not orientation-based shading.
 - [ ] **Visual regression + stuck-color test** — headless Playwright run for 5 min, frame every 2s, detect stuck mixed colors after cascade completes; `npm run test:stuck`
 - [ ] macOS `.saver` bundle via WKWebView
 
@@ -151,6 +150,7 @@ Press `P` to cycle palettes with a HUD overlay.
 - ✅ Variable cascade easing — ease-in-out cubic on wave timing
 - ✅ Paper texture — pre-generated noise + multi-angle fibers matching equilateral grain
 - ✅ Paper depth shading — diagonal gradient + thin crease stroke per triangle
+- ✅ **Kami 2-style rendering** — color-relative edge creases (18% darker, near-invisible within same-color regions) + stable per-triangle lightness variation (±8%, seeded from index via Knuth hash, not orientation-based); 127 tests
 - ✅ 3 built-in palettes (Sakura, Ocean, Ember)
 - ✅ Palette picker overlay (press `P`)
 - ✅ Multiple simultaneous cascades (up to 2 overlapping waves)
@@ -160,7 +160,7 @@ Press `P` to cycle palettes with a HUD overlay.
 - ✅ BUG FIX: Edge artifacts — canvas clip rect prevents black zigzag borders
 - ✅ BUG FIX: Fold animation clearly visible — proper axis reflection, 600ms, spring overshoot
 - ✅ Edge fold behavior — viewport-boundary triangles peel along screen edge
-- ✅ **Live controls overlay** — press `C` to toggle: sliders for speed/pause/size/cascades, palette buttons, live FPS; `+`/`-` for speed steps; 114 tests
+- ✅ **Live controls overlay** — press `C` to toggle: sliders for speed/pause/size/cascades, palette buttons, live FPS; `+`/`-` for speed steps
 
 ## License
 
