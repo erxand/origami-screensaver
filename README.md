@@ -139,6 +139,7 @@ Press `P` to cycle palettes with a HUD overlay.
 
 ## Roadmap
 
+- [ ] **Live param tweaker** — press `C` (for config) to toggle a live controls overlay. Sliders/inputs for: speed, wait time, triangle size, cascade count, palette picker. Changes apply instantly without reloading. Should also show current FPS counter. Keyboard shortcuts for common things: `+`/`-` for speed, `[`/`]` for triangle size, `P` already cycles palette.
 - [ ] macOS `.saver` bundle via WKWebView
 
 ## Completed
