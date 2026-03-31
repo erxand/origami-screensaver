@@ -439,40 +439,69 @@ export function createRenderer(ctx: CanvasRenderingContext2D, triCoords?: Float3
       foldEdgeIdx: number,
       triIndex = -1
     ): void {
-      const variedOld = applyTriVariation(oldColor, triIndex);
-      const variedNew = applyTriVariation(newColor, triIndex);
-
       const i0 = foldEdgeIdx;
       const i1 = (foldEdgeIdx + 1) % 3;
       const i2 = (foldEdgeIdx + 2) % 3;
+      this.drawFoldingTriangleRaw(
+        points[i0][0], points[i0][1],
+        points[i1][0], points[i1][1],
+        points[i2][0], points[i2][1],
+        oldColor, newColor, progress, foldEdgeIdx, triIndex
+      );
+    },
 
-      const edgeP0 = points[i0];
-      const edgeP1 = points[i1];
-      const apex = points[i2];
+    /**
+     * Draw a folding triangle from raw flat coordinates — zero array allocations in hot path.
+     * Called directly with typed-array coords in the static-cache render loop.
+     * @param ex0,ey0  first point of fold edge (points[foldEdgeIdx])
+     * @param ex1,ey1  second point of fold edge (points[(foldEdgeIdx+1)%3])
+     * @param ax,ay    apex point (points[(foldEdgeIdx+2)%3])
+     */
+    drawFoldingTriangleRaw(
+      ex0: number, ey0: number,
+      ex1: number, ey1: number,
+      ax: number, ay: number,
+      oldColor: string,
+      newColor: string,
+      progress: number,
+      foldEdgeIdx: number,
+      triIndex = -1
+    ): void {
+      const variedOld = applyTriVariation(oldColor, triIndex);
+      const variedNew = applyTriVariation(newColor, triIndex);
 
       // Reflect apex across the fold edge.
-      const ex = edgeP1[0] - edgeP0[0];
-      const ey = edgeP1[1] - edgeP0[1];
-      const edgeLenSq = ex * ex + ey * ey;
+      const edgeX = ex1 - ex0;
+      const edgeY = ey1 - ey0;
+      const edgeLenSq = edgeX * edgeX + edgeY * edgeY;
       const t_proj = edgeLenSq > 0
-        ? ((apex[0] - edgeP0[0]) * ex + (apex[1] - edgeP0[1]) * ey) / edgeLenSq
+        ? ((ax - ex0) * edgeX + (ay - ey0) * edgeY) / edgeLenSq
         : 0;
-      const projX = edgeP0[0] + t_proj * ex;
-      const projY = edgeP0[1] + t_proj * ey;
-      const reflApexX = 2 * projX - apex[0];
-      const reflApexY = 2 * projY - apex[1];
+      const projX = ex0 + t_proj * edgeX;
+      const projY = ey0 + t_proj * edgeY;
+      const reflApexX = 2 * projX - ax;
+      const reflApexY = 2 * projY - ay;
 
       const p = Math.min(1.05, Math.max(0, progress));
+
+      // Draw base triangle (full shape, current backing color)
+      ctx.beginPath();
+      // Reconstruct original point order from foldEdgeIdx and raw coords
+      // ex0=points[foldEdgeIdx], ex1=points[(foldEdgeIdx+1)%3], ax=points[(foldEdgeIdx+2)%3]
+      // For tracePath we need all 3 original points; we have them as ex0/ey0, ex1/ey1, ax/ay
+      ctx.moveTo(ex0, ey0);
+      ctx.lineTo(ex1, ey1);
+      ctx.lineTo(ax, ay);
+      ctx.closePath();
 
       if (p <= 0.5) {
         // First half: old color face folding up toward the edge
         const phase = p * 2; // 0..1
         const scale = 1 - phase;
-        const foldedApexX = projX + (apex[0] - projX) * scale;
-        const foldedApexY = projY + (apex[1] - projY) * scale;
+        const foldedApexX = projX + (ax - projX) * scale;
+        const foldedApexY = projY + (ay - projY) * scale;
 
         // Reveal new color underneath
-        tracePath(points);
         ctx.fillStyle = variedNew;
         ctx.fill();
         applyDepthShading(variedNew);
@@ -480,8 +509,8 @@ export function createRenderer(ctx: CanvasRenderingContext2D, triCoords?: Float3
         // Draw the folding flap
         if (scale > 0.005) {
           ctx.beginPath();
-          ctx.moveTo(edgeP0[0], edgeP0[1]);
-          ctx.lineTo(edgeP1[0], edgeP1[1]);
+          ctx.moveTo(ex0, ey0);
+          ctx.lineTo(ex1, ey1);
           ctx.lineTo(foldedApexX, foldedApexY);
           ctx.closePath();
           ctx.fillStyle = variedOld;
@@ -498,7 +527,6 @@ export function createRenderer(ctx: CanvasRenderingContext2D, triCoords?: Float3
         const foldedApexY = projY + (reflApexY - projY) * overshootPhase;
 
         // Draw the base (new color)
-        tracePath(points);
         ctx.fillStyle = variedNew;
         ctx.fill();
         applyDepthShading(variedNew);
@@ -506,8 +534,8 @@ export function createRenderer(ctx: CanvasRenderingContext2D, triCoords?: Float3
         // Draw the folding flap coming down
         if (overshootPhase < 1.0) {
           ctx.beginPath();
-          ctx.moveTo(edgeP0[0], edgeP0[1]);
-          ctx.lineTo(edgeP1[0], edgeP1[1]);
+          ctx.moveTo(ex0, ey0);
+          ctx.lineTo(ex1, ey1);
           ctx.lineTo(foldedApexX, foldedApexY);
           ctx.closePath();
           ctx.fillStyle = variedNew;
@@ -580,24 +608,49 @@ export function createRenderer(ctx: CanvasRenderingContext2D, triCoords?: Float3
 
         // Draw only animating triangles on top — O(K) when foldingIndices provided
         if (hasAnim && animStates) {
-          const indices = foldingIndices
-            ? Array.from(foldingIndices)
-            : triangles.map((_, idx) => idx);
-          for (const i of indices) {
-            const anim = animStates[i];
-            if (!anim || anim.progress <= 0 || anim.progress >= 1.15) continue;
-            let pts: [number, number][];
-            if (triCoords) {
-              const base = i * COORDS_STRIDE;
-              pts = [
-                [triCoords[base],     triCoords[base + 1]],
-                [triCoords[base + 2], triCoords[base + 3]],
-                [triCoords[base + 4], triCoords[base + 5]],
-              ];
-            } else {
-              pts = triangles[i].points as [number, number][];
+          if (foldingIndices) {
+            // O(K): iterate Set directly — no Array.from allocation
+            for (const i of foldingIndices) {
+              const anim = animStates[i];
+              if (!anim || anim.progress <= 0 || anim.progress >= 1.15) continue;
+              if (triCoords) {
+                // Zero-allocation: read raw coords and call drawFoldingTriangleRaw directly
+                const base = i * COORDS_STRIDE;
+                const i0 = anim.foldEdgeIdx;
+                const i1 = (i0 + 1) % 3;
+                const i2 = (i0 + 2) % 3;
+                this.drawFoldingTriangleRaw(
+                  triCoords[base + i0 * 2],     triCoords[base + i0 * 2 + 1],
+                  triCoords[base + i1 * 2],     triCoords[base + i1 * 2 + 1],
+                  triCoords[base + i2 * 2],     triCoords[base + i2 * 2 + 1],
+                  anim.oldColor, anim.newColor, anim.progress, anim.foldEdgeIdx, i
+                );
+              } else {
+                const pts = triangles[i].points as [number, number][];
+                this.drawFoldingTriangle(pts, anim.oldColor, anim.newColor, anim.progress, anim.foldEdgeIdx, i);
+              }
             }
-            this.drawFoldingTriangle(pts, anim.oldColor, anim.newColor, anim.progress, anim.foldEdgeIdx, i);
+          } else {
+            // O(N) fallback when no active-set provided
+            for (let i = 0; i < triangles.length; i++) {
+              const anim = animStates[i];
+              if (!anim || anim.progress <= 0 || anim.progress >= 1.15) continue;
+              if (triCoords) {
+                const base = i * COORDS_STRIDE;
+                const i0 = anim.foldEdgeIdx;
+                const i1 = (i0 + 1) % 3;
+                const i2 = (i0 + 2) % 3;
+                this.drawFoldingTriangleRaw(
+                  triCoords[base + i0 * 2],     triCoords[base + i0 * 2 + 1],
+                  triCoords[base + i1 * 2],     triCoords[base + i1 * 2 + 1],
+                  triCoords[base + i2 * 2],     triCoords[base + i2 * 2 + 1],
+                  anim.oldColor, anim.newColor, anim.progress, anim.foldEdgeIdx, i
+                );
+              } else {
+                const pts = triangles[i].points as [number, number][];
+                this.drawFoldingTriangle(pts, anim.oldColor, anim.newColor, anim.progress, anim.foldEdgeIdx, i);
+              }
+            }
           }
         }
 
