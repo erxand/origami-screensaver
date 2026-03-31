@@ -45,6 +45,11 @@ export function createScreensaver(canvas, options = {}) {
   let animFrameId = null;
   let running = false;
 
+  // Dirty flag — skip renderFrame when nothing has changed
+  // Set to true whenever animation state or overlay changes.
+  let dirty = true;
+  let activeAnimCount = 0; // triangles currently folding
+
   // Palette overlay
   let paletteOverlayTimer = 0;
   let paletteOverlayText = '';
@@ -112,6 +117,7 @@ export function createScreensaver(canvas, options = {}) {
       );
     }
 
+    dirty = true;
     activeCascades.push({ schedule, startTime: now, newColor });
     currentColor = newColor;
   }
@@ -156,36 +162,56 @@ export function createScreensaver(canvas, options = {}) {
     }
 
     // Update animating triangles
+    let prevActiveCount = activeAnimCount;
+    activeAnimCount = 0;
     for (let i = 0; i < animStates.length; i++) {
       const anim = animStates[i];
       if (anim.state === State.FOLDING) {
-        const done = updateAnim(anim, now);
-        if (done) {
-          colors[i] = anim.newColor;
-          resetAnim(anim);
+        // Check if the fold has started yet (startTime may be in the future)
+        if (anim.startTime <= now) {
+          const done = updateAnim(anim, now);
+          if (done) {
+            colors[i] = anim.newColor;
+            resetAnim(anim);
+            dirty = true;
+          } else {
+            activeAnimCount++;
+            dirty = true;
+          }
+        } else {
+          // Pending (not yet started) — still counts as active work
+          activeAnimCount++;
         }
       }
     }
 
-    // Build render array (reuse objects to avoid allocations)
-    for (let i = 0; i < animStates.length; i++) {
-      const a = animStates[i];
-      if (a.state === State.FOLDING) {
-        if (!renderAnims[i]) renderAnims[i] = {};
-        renderAnims[i].progress   = a.progress;
-        renderAnims[i].oldColor   = a.oldColor;
-        renderAnims[i].newColor   = a.newColor;
-        renderAnims[i].foldEdgeIdx = a.foldEdgeIdx;
-      } else {
-        renderAnims[i] = null;
+    // Mark dirty when transition from active → idle (need one final clean frame)
+    if (prevActiveCount > 0 && activeAnimCount === 0) dirty = true;
+
+    // Build render array and render only when dirty
+    if (dirty || paletteOverlayTimer > 0) {
+      // Build render array (reuse objects to avoid allocations)
+      for (let i = 0; i < animStates.length; i++) {
+        const a = animStates[i];
+        if (a.state === State.FOLDING && a.startTime <= now) {
+          if (!renderAnims[i]) renderAnims[i] = {};
+          renderAnims[i].progress   = a.progress;
+          renderAnims[i].oldColor   = a.oldColor;
+          renderAnims[i].newColor   = a.newColor;
+          renderAnims[i].foldEdgeIdx = a.foldEdgeIdx;
+        } else {
+          renderAnims[i] = null;
+        }
       }
-    }
 
-    renderer.renderFrame(grid.triangles, colors, renderAnims);
+      renderer.renderFrame(grid.triangles, colors, renderAnims);
 
-    if (paletteOverlayTimer > 0) {
-      drawPaletteOverlay(paletteOverlayText);
-      paletteOverlayTimer -= 16;
+      if (paletteOverlayTimer > 0) {
+        drawPaletteOverlay(paletteOverlayText);
+        paletteOverlayTimer -= 16;
+      }
+
+      dirty = false;
     }
 
     animFrameId = requestAnimationFrame(tick);
@@ -217,6 +243,7 @@ export function createScreensaver(canvas, options = {}) {
         cycler.setPaletteByIndex(value);
         paletteOverlayText = `Palette: ${cycler.currentPaletteName()}`;
         paletteOverlayTimer = 2000;
+        dirty = true;
         if (running && grid) {
           const now = performance.now();
           if (activeCascades.length >= maxConcurrent) activeCascades.shift();
@@ -262,6 +289,8 @@ export function createScreensaver(canvas, options = {}) {
       buildGrid();
       colors.fill(prevColor);
       activeCascades = [];
+      activeAnimCount = 0;
+      dirty = true;
       waitingUntil = performance.now() + 2000;
     },
 
@@ -269,6 +298,7 @@ export function createScreensaver(canvas, options = {}) {
       cycler.nextPalette();
       paletteOverlayText = `Palette: ${cycler.currentPaletteName()}`;
       paletteOverlayTimer = 2500;
+      dirty = true;
       if (running && grid) {
         const now = performance.now();
         if (activeCascades.length >= maxConcurrent) activeCascades.shift();

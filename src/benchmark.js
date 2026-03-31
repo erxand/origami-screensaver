@@ -278,7 +278,32 @@ function run() {
     console.log();
   }
 
-  // 4. Bottleneck identification
+  // 4. Idle frame cost (dirty-flag: skip renderFrame when nothing animating)
+  console.log('--- Idle Frame Cost (dirty-flag skip, no animation) ---');
+  console.log();
+  for (const count of triangleCounts) {
+    const side = Math.max(40, Math.round(Math.sqrt((1920 * 1080 * Math.sqrt(3)) / (4 * count))));
+    const grid = createGrid(1920, 1080, side);
+    const actualCount = grid.triangles.length;
+    const animStates = createAnimStates(actualCount);
+    // No folds started — all IDLE
+    const IDLE_FRAMES = 500;
+    const t0 = performance.now();
+    for (let f = 0; f < IDLE_FRAMES; f++) {
+      // Simulate the dirty-flag check: only run update loop, no render
+      let hasAnim = false;
+      for (let i = 0; i < actualCount; i++) {
+        if (animStates[i].state !== 'IDLE') { hasAnim = true; break; }
+      }
+      // dirty=false, hasAnim=false → skip renderFrame entirely
+      if (hasAnim) { /* would render */ }
+    }
+    const idleMs = (performance.now() - t0) / IDLE_FRAMES;
+    console.log(`  ${actualCount} triangles (target ${count}): ${idleMs.toFixed(4)} ms/frame idle (dirty-flag saves ~100% render cost)`);
+  }
+  console.log();
+
+  // 5. Bottleneck identification
   console.log('--- TOP BOTTLENECKS ---');
   console.log();
 
