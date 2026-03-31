@@ -87,15 +87,17 @@ Benchmarks on Apple Silicon (M-series), measured headlessly:
 
 | Triangles | Avg frame | P95 frame | ~FPS |
 |-----------|-----------|-----------|------|
-| ~500      | 0.175 ms  | 0.252 ms  | 5700+ |
-| ~1000     | 0.171 ms  | 0.256 ms  | 5800+ |
-| ~2000     | 0.169 ms  | 0.200 ms  | 5900+ |
+| ~500      | 0.181 ms  | 0.258 ms  | 5500+ |
+| ~1000     | 0.173 ms  | 0.261 ms  | 5800+ |
+| ~2000     | 0.161 ms  | 0.184 ms  | 6200+ |
 
 Well within 60fps budget at any viewport size. Key optimizations:
 - **Dirty flag** — unchanged triangles are skipped entirely each frame
 - **Pre-allocated arrays** — no object creation in the render loop
 - **Color variation cache** — `applyTriVariation` and `creaseColor` results cached; eliminates per-frame string allocation (~6× speedup vs baseline)
 - **Global paper texture** — paper overlay applied once per frame over full canvas instead of per-triangle; reduces canvas save/restore from N×2 to 2 per frame
+- **Static triangle cache** — idle triangles are blit from an offscreen canvas; during a cascade, per-frame fill calls drop from N → K (animating only), measured **3.5× reduction** in draw calls at 3000+ triangles
+- **Pre-computed cascade maxStart** — eliminates O(N) `reduce()` on the `schedule` array every animation tick
 
 Run the full benchmark:
 
@@ -141,9 +143,13 @@ Press `P` to cycle palettes with a HUD overlay.
 
 ## Roadmap
 
-- [ ] **[ONGOING] Performance — always be optimizing.** When nothing else is left, find and fix the next bottleneck. Areas to explore: offscreen canvas + `drawImage` for static triangles (only re-render animating ones), OffscreenCanvas + Worker for texture generation, reduce canvas state changes (batch same-color triangles), typed arrays instead of object arrays for triangle data, canvas compositing tricks to reduce overdraw, WebGL renderer as a future option for 1000+ triangles at 60fps.
+- [ ] **[ONGOING] Performance — always be optimizing.** When nothing else is left, find and fix the next bottleneck. Areas to explore: OffscreenCanvas + Worker for texture generation, batch same-color triangles in a single path (reduces ctx state changes), typed arrays instead of object arrays for triangle data, canvas compositing tricks to reduce overdraw, WebGL renderer as a future option for 1000+ triangles at 60fps.
 
 ## Completed
+
+- ✅ **Static triangle cache** — offscreen canvas holds all idle triangles; `drawImage` blit replaces N fill+stroke calls during cascades; measured 3.5× reduction in fill calls per frame; `invalidateStaticCache()` called on fold completion and resize; falls back gracefully in test env (no DOM)
+- ✅ **Eliminated O(N) per-tick reduce** — `maxScheduleStart` pre-computed when building cascade schedule; prune check is now O(1) per active cascade per tick
+- ✅ **Removed allocating `points` arg from `applyDepthShading`** — callers previously passed inline `[edgeP0, edgeP1, [x,y]]` arrays that were never used; removing eliminates 2 array allocations per animating-triangle per frame
 
 - ✅ **Fix edge bleed** — fill canvas with current screensaver color before drawing triangles; eliminates black gaps at canvas edges
 - ✅ **TypeScript migration** — all `src/*.ts` + `tests/*.test.ts`; `tsconfig.json` strict mode; shared interfaces in `src/types.ts` (Triangle, AnimState, GridResult, CascadeEntry, ParsedConfig, etc.); also fixed pre-existing flaky cascade test
