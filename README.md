@@ -148,6 +148,7 @@ Press `P` to cycle palettes with a HUD overlay.
 
 ## Roadmap
 
+- [ ] **[BUG] Left-edge triangles not updating color on cascade** — triangles on the far left side start with the correct color on page load, but when a cascade completes they stay the old color while the rest of the screen updates. Most likely cause: the offscreen static cache rebuild is clipping or skipping triangles whose bounding box extends past x=0 (negative x coords from the 1-triangle bleed zone). The `patchStaticTriangle()` O(1) update may also be using wrong coordinate bounds. Fix: verify the offscreen cache dimensions match canvas + bleed zone; ensure all triangles with any vertex on-canvas are included in cache rebuilds and patch operations.
 - [ ] **[ONGOING] Performance — always be optimizing.** When nothing else is left, find and fix the next bottleneck. Areas to explore: OffscreenCanvas + Worker for texture generation, batch same-color triangles in a single path (reduces ctx state changes), canvas compositing tricks to reduce overdraw, WebGL renderer as a future option for 1000+ triangles at 60fps.
 
 ## Completed
