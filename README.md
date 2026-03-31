@@ -139,7 +139,6 @@ Press `P` to cycle palettes with a HUD overlay.
 
 ## Roadmap
 
-- [ ] Edge fold behavior (partial fold off-screen at edges)
 - [ ] macOS `.saver` bundle via WKWebView
 
 ## Completed
@@ -159,6 +158,7 @@ Press `P` to cycle palettes with a HUD overlay.
 - ✅ 105 tests across 8 test files
 - ✅ **BUG FIX: Edge artifacts** — canvas clip rect prevents black zigzag borders on viewport edges
 - ✅ **BUG FIX: Fold animation now clearly visible** — proper axis reflection, 600ms duration, strong crease shadow, spring overshoot renders visually
+- ✅ **Edge fold behavior** — triangles near viewport boundaries fold along their screen-adjacent edge (paper peeling off the wall), 111 tests
 
 ## License
 
