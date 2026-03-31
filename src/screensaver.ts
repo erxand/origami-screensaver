@@ -134,6 +134,8 @@ export function createScreensaver(canvas: HTMLCanvasElement, options: Screensave
         foldEdgeIdx,
         foldDuration
       );
+      // Precompute fold projection geometry once — used every frame during fold
+      renderer.cacheFoldGeom(entry.index, foldEdgeIdx);
       foldingSet.add(entry.index);
     }
 

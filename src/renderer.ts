@@ -215,6 +215,14 @@ export function createRenderer(ctx: CanvasRenderingContext2D, triCoords?: Float3
     // In test environments, document may not exist
   }
 
+  // Pre-computed fold projection geometry cache.
+  // Stride 4 per triangle: [projX, projY, reflApexX, reflApexY].
+  // Populated by cacheFoldGeom() once when a fold starts; read every frame
+  // inside drawFoldingTriangleRaw() to skip the per-frame dot-product + division.
+  let foldGeomCache: Float32Array | null = triCoords
+    ? new Float32Array(triCoords.length / COORDS_STRIDE * 4)
+    : null;
+
   // Offscreen canvas for static (idle) triangles
   let staticCanvas: HTMLCanvasElement | null = null;
   let staticCtx: CanvasRenderingContext2D | null = null;
@@ -259,6 +267,40 @@ export function createRenderer(ctx: CanvasRenderingContext2D, triCoords?: Float3
     sc.strokeStyle = creaseColor(variedColor);
     sc.lineWidth = 0.7;
     sc.stroke();
+  }
+
+  /**
+   * Precompute and cache fold projection geometry for a triangle.
+   * Call once when `startFold` is invoked for triangle `index`.
+   * Stores [projX, projY, reflApexX, reflApexY] in foldGeomCache at index*4.
+   *
+   * This eliminates the per-frame dot-product + division from drawFoldingTriangleRaw
+   * (6 multiplies, 4 adds, 1 div → 0 per frame for static fold geometry).
+   */
+  function cacheFoldGeom(index: number, foldEdgeIdx: number): void {
+    if (!foldGeomCache || !triCoords) return;
+    const base = index * COORDS_STRIDE;
+    const i0 = foldEdgeIdx;
+    const i1 = (foldEdgeIdx + 1) % 3;
+    const i2 = (foldEdgeIdx + 2) % 3;
+    const ex0 = triCoords[base + i0 * 2],     ey0 = triCoords[base + i0 * 2 + 1];
+    const ex1 = triCoords[base + i1 * 2],     ey1 = triCoords[base + i1 * 2 + 1];
+    const ax  = triCoords[base + i2 * 2],     ay  = triCoords[base + i2 * 2 + 1];
+
+    const edgeX = ex1 - ex0;
+    const edgeY = ey1 - ey0;
+    const edgeLenSq = edgeX * edgeX + edgeY * edgeY;
+    const t_proj = edgeLenSq > 0
+      ? ((ax - ex0) * edgeX + (ay - ey0) * edgeY) / edgeLenSq
+      : 0;
+    const projX = ex0 + t_proj * edgeX;
+    const projY = ey0 + t_proj * edgeY;
+
+    const gbase = index * 4;
+    foldGeomCache[gbase]     = projX;
+    foldGeomCache[gbase + 1] = projY;
+    foldGeomCache[gbase + 2] = 2 * projX - ax; // reflApexX
+    foldGeomCache[gbase + 3] = 2 * projY - ay; // reflApexY
   }
 
   /**
@@ -406,6 +448,14 @@ export function createRenderer(ctx: CanvasRenderingContext2D, triCoords?: Float3
      */
     patchStaticTriangle,
 
+    /**
+     * Precompute fold projection geometry for triangle `index` at fold start.
+     * Call once when startFold() is invoked for a triangle.
+     * Caches [projX, projY, reflApexX, reflApexY] so drawFoldingTriangleRaw
+     * skips the per-frame dot-product + division (~10 FLOPs per animating tri per frame).
+     */
+    cacheFoldGeom,
+
     /** Clear the entire canvas, optionally filling with a background color. */
     clear(bgColor?: string): void {
       if (bgColor) {
@@ -470,17 +520,28 @@ export function createRenderer(ctx: CanvasRenderingContext2D, triCoords?: Float3
       const variedOld = applyTriVariation(oldColor, triIndex);
       const variedNew = applyTriVariation(newColor, triIndex);
 
-      // Reflect apex across the fold edge.
-      const edgeX = ex1 - ex0;
-      const edgeY = ey1 - ey0;
-      const edgeLenSq = edgeX * edgeX + edgeY * edgeY;
-      const t_proj = edgeLenSq > 0
-        ? ((ax - ex0) * edgeX + (ay - ey0) * edgeY) / edgeLenSq
-        : 0;
-      const projX = ex0 + t_proj * edgeX;
-      const projY = ey0 + t_proj * edgeY;
-      const reflApexX = 2 * projX - ax;
-      const reflApexY = 2 * projY - ay;
+      // Fold projection geometry — use precomputed cache when available (zero cost per frame).
+      // Falls back to inline computation for test environments or when cache is unset.
+      let projX: number, projY: number, reflApexX: number, reflApexY: number;
+      if (foldGeomCache && triIndex >= 0) {
+        const gbase = triIndex * 4;
+        projX     = foldGeomCache[gbase];
+        projY     = foldGeomCache[gbase + 1];
+        reflApexX = foldGeomCache[gbase + 2];
+        reflApexY = foldGeomCache[gbase + 3];
+      } else {
+        // Inline computation (test env / no cache)
+        const edgeX = ex1 - ex0;
+        const edgeY = ey1 - ey0;
+        const edgeLenSq = edgeX * edgeX + edgeY * edgeY;
+        const t_proj = edgeLenSq > 0
+          ? ((ax - ex0) * edgeX + (ay - ey0) * edgeY) / edgeLenSq
+          : 0;
+        projX = ex0 + t_proj * edgeX;
+        projY = ey0 + t_proj * edgeY;
+        reflApexX = 2 * projX - ax;
+        reflApexY = 2 * projY - ay;
+      }
 
       const p = Math.min(1.05, Math.max(0, progress));
 

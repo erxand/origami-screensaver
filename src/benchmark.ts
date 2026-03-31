@@ -86,6 +86,7 @@ function benchRenderFrame(triCount: number, frames = 200) {
       foldEdgeIdx = findFoldEdge(tri, grid.triangles[entry.parentIdx]);
     }
     startFold(animStates[entry.index], baseTime + entry.startTime, newColor, colors[entry.index], foldEdgeIdx, 400);
+    renderer.cacheFoldGeom(entry.index, foldEdgeIdx);
   }
 
   const frameTimes: number[] = [];
@@ -422,6 +423,94 @@ function benchTypedArrayCoords(triCount: number, frames = 300): {
 }
 
 // ---------------------------------------------------------------------------
+// Benchmark: fold geometry cache speedup
+// Measures drawFoldingTriangleRaw with vs without precomputed projection cache.
+// Without cache: ~10 FLOPs per animating triangle (dot-product + division + 4 muls).
+// With cache: 4 array reads.
+// ---------------------------------------------------------------------------
+function benchFoldGeomCache(triCount: number, frames = 300): {
+  targetTriangles: number;
+  actualTriangles: number;
+  avgWithCacheMs: number;
+  avgWithoutCacheMs: number;
+  speedupRatio: number;
+} {
+  const side = Math.max(40, Math.round(Math.sqrt((1920 * 1080 * Math.sqrt(3)) / (4 * triCount))));
+  const grid = createGrid(1920, 1080, side);
+  const adjacency = buildAdjacency(grid.rows, grid.cols);
+  const actualCount = grid.triangles.length;
+
+  const ctx1 = mockCtx();
+  const ctx2 = mockCtx();
+  // With fold geom cache (triCoords provided → cacheFoldGeom can populate)
+  const rendererWith = createRenderer(ctx1, grid.triCoords);
+  // Without fold geom cache (triCoords NOT provided → inline geometry computation)
+  const rendererWithout = createRenderer(ctx2, undefined);
+
+  const animStates1 = createAnimStates(actualCount);
+  const animStates2 = createAnimStates(actualCount);
+  const colors = new Array<string>(actualCount).fill('#f8c3cd');
+  const renderAnims1: (Record<string, unknown> | null)[] = new Array(actualCount).fill(null);
+  const renderAnims2: (Record<string, unknown> | null)[] = new Array(actualCount).fill(null);
+
+  const originIdx = Math.floor(actualCount / 2);
+  const schedule = buildCascadeSchedule(originIdx, adjacency, 60);
+  const baseTime = 1000;
+  for (const entry of schedule) {
+    const tri = grid.triangles[entry.index];
+    let foldEdgeIdx = 0;
+    if (entry.parentIdx >= 0) foldEdgeIdx = findFoldEdge(tri, grid.triangles[entry.parentIdx]);
+    startFold(animStates1[entry.index], baseTime + entry.startTime, '#bbb', colors[entry.index], foldEdgeIdx, 400);
+    startFold(animStates2[entry.index], baseTime + entry.startTime, '#bbb', colors[entry.index], foldEdgeIdx, 400);
+    // Populate fold geom cache for the "with" renderer only
+    rendererWith.cacheFoldGeom(entry.index, foldEdgeIdx);
+  }
+
+  function buildRenderAnims(animStates: ReturnType<typeof createAnimStates>, renderAnims: (Record<string, unknown> | null)[], now: number) {
+    for (let i = 0; i < actualCount; i++) {
+      const a = animStates[i];
+      if (a.state === State.FOLDING) {
+        updateAnim(a, now);
+        if (!renderAnims[i]) renderAnims[i] = {};
+        const ra = renderAnims[i]!;
+        ra['progress'] = a.progress; ra['oldColor'] = a.oldColor;
+        ra['newColor'] = a.newColor; ra['foldEdgeIdx'] = a.foldEdgeIdx;
+      } else {
+        renderAnims[i] = null;
+      }
+    }
+  }
+
+  const withTimes: number[] = [];
+  const withoutTimes: number[] = [];
+
+  for (let f = 0; f < frames; f++) {
+    const now = baseTime + f * 16.67;
+
+    buildRenderAnims(animStates1, renderAnims1, now);
+    const t1 = performance.now();
+    rendererWith.renderFrame(grid.triangles, colors, renderAnims1 as never);
+    withTimes.push(performance.now() - t1);
+
+    buildRenderAnims(animStates2, renderAnims2, now);
+    const t2 = performance.now();
+    rendererWithout.renderFrame(grid.triangles, colors, renderAnims2 as never);
+    withoutTimes.push(performance.now() - t2);
+  }
+
+  const avgWith    = withTimes.reduce((a, b) => a + b, 0) / withTimes.length;
+  const avgWithout = withoutTimes.reduce((a, b) => a + b, 0) / withoutTimes.length;
+
+  return {
+    targetTriangles: triCount,
+    actualTriangles: actualCount,
+    avgWithCacheMs: avgWith,
+    avgWithoutCacheMs: avgWithout,
+    speedupRatio: avgWithout / Math.max(avgWith, 0.00001),
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Benchmark: active-set tick-scan speedup (O(K) vs O(N))
 // Compares O(N) full-scan tick loop vs O(K) active-set iteration.
 // At 3000 triangles with ~300 animating, we expect ~10× fewer iterations.
@@ -612,7 +701,19 @@ function run(): void {
     console.log();
   }
 
-  // 4c. Active-set tick-scan speedup
+  // 4c. Fold geometry cache speedup
+  console.log('--- Fold Geometry Cache: precomputed vs per-frame ---');
+  console.log();
+  for (const count of triangleCounts) {
+    const r = benchFoldGeomCache(count);
+    console.log(`  ${r.actualTriangles} triangles (target ${count}):`);
+    console.log(`    With geom cache:    ${(r.avgWithCacheMs * 1000).toFixed(1)} µs/frame`);
+    console.log(`    Without (inline):   ${(r.avgWithoutCacheMs * 1000).toFixed(1)} µs/frame`);
+    console.log(`    Speedup:            ${r.speedupRatio.toFixed(2)}×`);
+    console.log();
+  }
+
+  // 4d. Active-set tick-scan speedup
   console.log('--- Active-Set Tick Scan: O(K) vs O(N) ---');
   console.log();
   for (const count of triangleCounts) {
