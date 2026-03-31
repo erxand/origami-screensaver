@@ -139,6 +139,7 @@ Press `P` to cycle palettes with a HUD overlay.
 
 ## Roadmap
 
+- [ ] **Visual regression test** — automated test that starts the dev server, captures a screenshot every 2 seconds for 60 seconds (30 frames total), saves them to `tests/screenshots/YYYY-MM-DD-HH-MM/frame_XX.png`, and opens them as a contact sheet so visual jank can be spotted at a glance. Should also flag: frames that are identical (animation stalled?), frames where >95% of pixels are one color (transition not happening?), and any frames with the black edge artifacts. Use Playwright headless to capture — no browser tool needed. This is a visual QA loop, not a pass/fail test.
 - [ ] **Live param tweaker** — press `C` (for config) to toggle a live controls overlay. Sliders/inputs for: speed, wait time, triangle size, cascade count, palette picker. Changes apply instantly without reloading. Should also show current FPS counter. Keyboard shortcuts for common things: `+`/`-` for speed, `[`/`]` for triangle size, `P` already cycles palette.
 - [ ] macOS `.saver` bundle via WKWebView
 
