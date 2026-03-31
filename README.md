@@ -114,18 +114,19 @@ npm run build      # Production build
 
 ## Tests
 
-93 tests across 8 test files:
+137 tests across 9 test files:
 
 | File | Tests | Covers |
 |------|-------|--------|
 | `grid.test.js` | 16 | Geometry, neighbor lookup, full coverage |
-| `animator.test.js` | 12 | State machine, easing, spring overshoot |
+| `animator.test.js` | 18 | State machine, easing, spring overshoot |
 | `cascade.test.js` | 9 | BFS correctness, timing schedule |
-| `palette.test.js` | 11 | Palette structure, color validation, cycling |
-| `renderer.test.js` | 6 | Draw calls, dirty flags (mock canvas) |
-| `easing.test.js` | 11 | Easing function correctness |
+| `palette.test.js` | 14 | Palette structure, color validation, cycling |
+| `renderer.test.js` | 19 | Draw calls, dirty flags (mock canvas) |
+| `easing.test.js` | 23 | Easing function correctness |
 | `benchmark.test.js` | 4 | Benchmark harness correctness |
 | `config.test.js` | 24 | URL param parsing, validation, round-trip |
+| `visual-regression.test.js` | 10 | Headless simulation: stuck triangles, cascade completion, 5-min stability |
 
 ## Color Palettes
 
@@ -139,11 +140,11 @@ Press `P` to cycle palettes with a HUD overlay.
 
 ## Roadmap
 
-- [ ] **Visual regression + stuck-color test** — headless Playwright run for 5 min, frame every 2s, detect stuck mixed colors after cascade completes; `npm run test:stuck`
 - [ ] macOS `.saver` bundle via WKWebView
 
 ## Completed
 
+- ✅ **Visual regression tests** — headless time-simulation (sim.js): stuck-triangle detection, cascade completion, 5-min stability, multi-cascade concurrency; 10 tests
 - ✅ Equilateral triangle grid with full-screen tiling
 - ✅ Fluid fold animation (cubic ease-in-out + spring overshoot)
 - ✅ BFS cascade propagation with smooth per-triangle stagger
