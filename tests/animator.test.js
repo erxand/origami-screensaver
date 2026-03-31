@@ -7,6 +7,7 @@ import {
   resetAnim,
   createAnimStates,
   findFoldEdge,
+  findEdgeFoldEdge,
 } from '../src/animator.js';
 
 describe('createAnimState', () => {
@@ -112,5 +113,61 @@ describe('findFoldEdge', () => {
     const tri = { row: 1, col: 2 };
     const trigger = { row: 0, col: 2 };
     expect(findFoldEdge(tri, trigger)).toBe(0);
+  });
+});
+
+describe('findEdgeFoldEdge', () => {
+  // Triangle with centroid at (30, 300) — near left edge of 800×600 canvas
+  const leftEdgeTri = {
+    cx: 30, cy: 300,
+    points: [[0, 250], [60, 250], [30, 350]],
+  };
+  // Triangle with centroid at (400, 300) — interior
+  const interiorTri = {
+    cx: 400, cy: 300,
+    points: [[370, 250], [430, 250], [400, 350]],
+  };
+  // Triangle with centroid at (770, 300) — near right edge
+  const rightEdgeTri = {
+    cx: 770, cy: 300,
+    points: [[740, 250], [800, 250], [770, 350]],
+  };
+  // Triangle near top
+  const topEdgeTri = {
+    cx: 400, cy: 20,
+    points: [[370, 0], [430, 0], [400, 60]],
+  };
+
+  it('returns -1 for interior triangle', () => {
+    expect(findEdgeFoldEdge(interiorTri, 800, 600)).toBe(-1);
+  });
+
+  it('returns a valid edge index (0,1,2) for left-edge triangle', () => {
+    const result = findEdgeFoldEdge(leftEdgeTri, 800, 600);
+    expect([0, 1, 2]).toContain(result);
+  });
+
+  it('returns a valid edge index for right-edge triangle', () => {
+    const result = findEdgeFoldEdge(rightEdgeTri, 800, 600);
+    expect([0, 1, 2]).toContain(result);
+  });
+
+  it('returns a valid edge index for top-edge triangle', () => {
+    const result = findEdgeFoldEdge(topEdgeTri, 800, 600);
+    expect([0, 1, 2]).toContain(result);
+  });
+
+  it('returns -1 for centroid exactly at center', () => {
+    const tri = { cx: 400, cy: 300, points: [[390, 290], [410, 290], [400, 310]] };
+    expect(findEdgeFoldEdge(tri, 800, 600)).toBe(-1);
+  });
+
+  it('picks the edge whose midpoint is closest to the nearest boundary', () => {
+    // For a left-edge triangle, the left-most edge midpoint should be selected
+    // Our leftEdgeTri: edge0 mid=(30,250), edge1 mid=(45,300), edge2 mid=(15,300)
+    // Closest boundary distances: edge2 mid x=15 → min=15; edge0 mid x=30 → min=30
+    // So edge2 (index 2) should win
+    const result = findEdgeFoldEdge(leftEdgeTri, 800, 600);
+    expect(result).toBe(2);
   });
 });

@@ -5,7 +5,7 @@
 import { createGrid, buildAdjacency, toIndex } from './grid.js';
 import { createRenderer } from './renderer.js';
 import { createPaletteCycler } from './palette.js';
-import { createAnimStates, startFold, updateAnim, resetAnim, findFoldEdge, State } from './animator.js';
+import { createAnimStates, startFold, updateAnim, resetAnim, findFoldEdge, findEdgeFoldEdge, State } from './animator.js';
 import { buildCascadeSchedule, cascadeDuration } from './cascade.js';
 
 const WAIT_BETWEEN_CASCADES = 8_000; // 8 seconds between cascade waves
@@ -79,6 +79,9 @@ export function createScreensaver(canvas, options = {}) {
     const originIdx = Math.floor(Math.random() * grid.triangles.length);
     const schedule = buildCascadeSchedule(originIdx, adjacency, cascadeDelay);
 
+    const cw = canvas.clientWidth;
+    const ch = canvas.clientHeight;
+
     // Only start folds for triangles not currently mid-fold
     for (const entry of schedule) {
       const anim = animStates[entry.index];
@@ -86,10 +89,16 @@ export function createScreensaver(canvas, options = {}) {
       if (anim.state === State.FOLDING) continue;
 
       const tri = grid.triangles[entry.index];
-      let foldEdgeIdx = 0;
-      if (entry.parentIdx >= 0) {
-        const parentTri = grid.triangles[entry.parentIdx];
-        foldEdgeIdx = findFoldEdge(tri, parentTri);
+
+      // Edge triangles fold along their viewport-boundary edge (peeling effect).
+      // Interior triangles fold along the shared edge with their cascade parent.
+      let foldEdgeIdx = findEdgeFoldEdge(tri, cw, ch);
+      if (foldEdgeIdx === -1) {
+        foldEdgeIdx = 0;
+        if (entry.parentIdx >= 0) {
+          const parentTri = grid.triangles[entry.parentIdx];
+          foldEdgeIdx = findFoldEdge(tri, parentTri);
+        }
       }
       startFold(
         anim,

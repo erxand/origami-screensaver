@@ -79,6 +79,56 @@ export function createAnimStates(count) {
 }
 
 /**
+ * Determine if a triangle is at the viewport boundary and return the edge
+ * index closest to the nearest screen edge (for "peeling off the wall" fold).
+ *
+ * When a cascade wave reaches the screen boundary, triangles fold along their
+ * viewport-adjacent edge instead of the cascade direction — simulating paper
+ * curling away from the edge of a surface.
+ *
+ * @param {object} tri - Triangle { cx, cy, points }
+ * @param {number} canvasWidth - Logical canvas width
+ * @param {number} canvasHeight - Logical canvas height
+ * @param {number} [threshold=55] - px from boundary to consider "edge triangle"
+ * @returns {number} Edge index (0, 1, or 2), or -1 if not an edge triangle
+ */
+export function findEdgeFoldEdge(tri, canvasWidth, canvasHeight, threshold = 55) {
+  const { cx, cy, points: pts } = tri;
+
+  // Only apply to triangles whose centroid is within `threshold` of any viewport edge
+  const nearLeft   = cx < threshold;
+  const nearRight  = cx > canvasWidth - threshold;
+  const nearTop    = cy < threshold;
+  const nearBottom = cy > canvasHeight - threshold;
+
+  if (!nearLeft && !nearRight && !nearTop && !nearBottom) return -1;
+
+  // Find which edge midpoint is closest to the nearest viewport boundary
+  const edges = [
+    [pts[0], pts[1]], // edge 0
+    [pts[1], pts[2]], // edge 1
+    [pts[2], pts[0]], // edge 2
+  ];
+
+  let bestEdge = 0;
+  let bestScore = Infinity;
+
+  for (let i = 0; i < 3; i++) {
+    const mx = (edges[i][0][0] + edges[i][1][0]) / 2;
+    const my = (edges[i][0][1] + edges[i][1][1]) / 2;
+
+    // Score = distance to the closest viewport boundary
+    const score = Math.min(mx, canvasWidth - mx, my, canvasHeight - my);
+    if (score < bestScore) {
+      bestScore = score;
+      bestEdge = i;
+    }
+  }
+
+  return bestEdge;
+}
+
+/**
  * Determine the fold edge index for a triangle being triggered by a neighbor.
  * The fold edge is the shared edge between the triangle and its trigger.
  *
