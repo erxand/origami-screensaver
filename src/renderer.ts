@@ -225,6 +225,33 @@ export function createRenderer(ctx: CanvasRenderingContext2D) {
   }
 
   /**
+   * Incrementally update one triangle in the static cache.
+   * Called when a single triangle finishes folding — avoids O(N) full rebuild.
+   * If the static cache isn't ready, falls back to a full invalidation.
+   */
+  function patchStaticTriangle(triangle: Triangle, color: string, index: number): void {
+    if (!staticCtx || staticDirty) {
+      // Cache not ready yet — full rebuild will happen on next renderFrame
+      staticDirty = true;
+      return;
+    }
+    const sc = staticCtx;
+    const pts = triangle.points as [number, number][];
+    const variedColor = applyTriVariation(color, index);
+
+    sc.beginPath();
+    sc.moveTo(pts[0][0], pts[0][1]);
+    sc.lineTo(pts[1][0], pts[1][1]);
+    sc.lineTo(pts[2][0], pts[2][1]);
+    sc.closePath();
+    sc.fillStyle = variedColor;
+    sc.fill();
+    sc.strokeStyle = creaseColor(variedColor);
+    sc.lineWidth = 0.7;
+    sc.stroke();
+  }
+
+  /**
    * Ensure the offscreen canvas exists and matches the current output size.
    */
   function ensureStaticCanvas(w: number, h: number): void {
@@ -337,8 +364,15 @@ export function createRenderer(ctx: CanvasRenderingContext2D) {
     /**
      * Notify the renderer that committed triangle colors have changed (a fold completed).
      * Forces the static cache to rebuild on the next frame.
+     * Prefer `patchStaticTriangle` when possible — it updates a single triangle in O(1).
      */
     invalidateStaticCache,
+
+    /**
+     * Incrementally update a single triangle in the static cache after fold completion.
+     * O(1) per triangle vs O(N) full rebuild — keeps the cache warm during cascades.
+     */
+    patchStaticTriangle,
 
     /** Clear the entire canvas, optionally filling with a background color. */
     clear(bgColor?: string): void {

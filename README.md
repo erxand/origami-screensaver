@@ -97,6 +97,7 @@ Well within 60fps budget at any viewport size. Key optimizations:
 - **Color variation cache** — `applyTriVariation` and `creaseColor` results cached; eliminates per-frame string allocation (~6× speedup vs baseline)
 - **Global paper texture** — paper overlay applied once per frame over full canvas instead of per-triangle; reduces canvas save/restore from N×2 to 2 per frame
 - **Static triangle cache** — idle triangles are blit from an offscreen canvas; during a cascade, per-frame fill calls drop from N → K (animating only), measured **3.5× reduction** in draw calls at 3000+ triangles
+- **Incremental static cache patch** — fold completions paint just 1 triangle onto the offscreen cache (O(1)) instead of a full O(N) rebuild; at 3000 triangles with ~300 folds per cascade this eliminates ~900,000 redundant draw ops per cascade
 - **Pre-computed cascade maxStart** — eliminates O(N) `reduce()` on the `schedule` array every animation tick
 
 Run the full benchmark:
@@ -147,7 +148,8 @@ Press `P` to cycle palettes with a HUD overlay.
 
 ## Completed
 
-- ✅ **Static triangle cache** — offscreen canvas holds all idle triangles; `drawImage` blit replaces N fill+stroke calls during cascades; measured 3.5× reduction in fill calls per frame; `invalidateStaticCache()` called on fold completion and resize; falls back gracefully in test env (no DOM)
+- ✅ **Incremental static cache patch** — fold completions call `patchStaticTriangle()` to repaint 1 triangle O(1) instead of full O(N) rebuild; at 3000 triangles with ~300 folds per cascade eliminates ~900,000 redundant draw ops per cascade
+- ✅ **Static triangle cache** — offscreen canvas holds all idle triangles; `drawImage` blit replaces N fill+stroke calls during cascades; measured 3.5× reduction in fill calls per frame; `invalidateStaticCache()` on resize; falls back gracefully in test env (no DOM)
 - ✅ **Eliminated O(N) per-tick reduce** — `maxScheduleStart` pre-computed when building cascade schedule; prune check is now O(1) per active cascade per tick
 - ✅ **Removed allocating `points` arg from `applyDepthShading`** — callers previously passed inline `[edgeP0, edgeP1, [x,y]]` arrays that were never used; removing eliminates 2 array allocations per animating-triangle per frame
 

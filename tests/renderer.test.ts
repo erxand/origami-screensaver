@@ -191,3 +191,30 @@ describe('createRenderer', () => {
     expect(ctx.fill).toHaveBeenCalled();
   });
 });
+
+describe('patchStaticTriangle', () => {
+  it('is exposed on the renderer', () => {
+    const ctx = mockCtx();
+    const r = createRenderer(ctx);
+    expect(typeof r.patchStaticTriangle).toBe('function');
+  });
+
+  it('does not throw in test environment (no DOM static canvas)', () => {
+    const ctx = mockCtx();
+    const r = createRenderer(ctx);
+    const tri = {
+      row: 0, col: 0, up: true,
+      cx: 50, cy: 43,
+      points: [[0, 86], [100, 86], [50, 0]] as [number, number][],
+    };
+    // In test env staticCtx is null — should silently fall back to full invalidation
+    expect(() => r.patchStaticTriangle(tri, '#ff8800', 5)).not.toThrow();
+  });
+
+  it('invalidateStaticCache is still exposed', () => {
+    const ctx = mockCtx();
+    const r = createRenderer(ctx);
+    expect(typeof r.invalidateStaticCache).toBe('function');
+    expect(() => r.invalidateStaticCache()).not.toThrow();
+  });
+});

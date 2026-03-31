@@ -189,8 +189,8 @@ export function createScreensaver(canvas: HTMLCanvasElement, options: Screensave
           if (done) {
             colors[i] = anim.newColor!;
             resetAnim(anim);
-            // Triangle committed its new color — static cache is now stale
-            renderer.invalidateStaticCache();
+            // Patch just this one triangle in the static cache (O(1) vs O(N) rebuild)
+            renderer.patchStaticTriangle(grid.triangles[i], colors[i], i);
             dirty = true;
           } else {
             activeAnimCount++;
