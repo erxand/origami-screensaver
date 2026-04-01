@@ -6,8 +6,8 @@ import { createGrid, buildAdjacency } from './grid.js';
 import { createRenderer } from './renderer.js';
 import { createPaletteCycler } from './palette.js';
 import { createAnimStates, startFold, updateAnim, resetAnim, findFoldEdge, findEdgeFoldEdge, State } from './animator.js';
-import { buildCascadeSchedule } from './cascade.js';
-import type { AnimState, RenderAnimState, CascadeEntry, GridResult, Triangle, ScreensaverOptions } from './types.js';
+import { buildCascadeScheduleFlat } from './cascade.js';
+import type { AnimState, RenderAnimState, GridResult, Triangle, ScreensaverOptions } from './types.js';
 
 const WAIT_BETWEEN_CASCADES = 8_000;
 const FOLD_DURATION = 400;
@@ -24,7 +24,8 @@ export function responsiveSide(width: number, height: number, targetCount = 1000
 }
 
 interface ActiveCascade {
-  schedule: CascadeEntry[];
+  /** Unused — kept for structural compat; screensaver uses flat schedule internally. */
+  schedule: never[];
   startTime: number;
   newColor: string;
   /** Pre-computed max startTime in schedule — avoids O(N) reduce() every tick. */
@@ -127,13 +128,17 @@ export function createScreensaver(canvas: HTMLCanvasElement, options: Screensave
 
     const newColor = forcedColor || cycler.nextColor();
     const originIdx = Math.floor(Math.random() * grid.triangles.length);
-    const schedule = buildCascadeSchedule(originIdx, adjacency, cascadeDelay);
+    // Zero-alloc flat BFS — returns typed-array views, no JS object allocation
+    const flat = buildCascadeScheduleFlat(originIdx, adjacency, cascadeDelay);
 
     const cw = canvas.clientWidth;
     const ch = canvas.clientHeight;
 
-    for (const entry of schedule) {
-      const anim = animStates[entry.index];
+    for (let fi = 0; fi < flat.length; fi++) {
+      const idx       = flat.indices[fi];
+      const parentIdx = flat.parents[fi];
+      const startTime = flat.startTimes[fi];
+      const anim = animStates[idx];
 
       if (anim.state === State.FOLDING) {
         // Triangle is already mid-fold from an earlier cascade.
@@ -142,38 +147,35 @@ export function createScreensaver(canvas: HTMLCanvasElement, options: Screensave
         // This fixes the bug where left-edge triangles (late in BFS order) stay
         // on the previous cascade's color while the rest of the screen updates.
         anim.newColor = newColor;
-        foldingSet.add(entry.index); // ensure we're tracking it
+        foldingSet.add(idx); // ensure we're tracking it
         continue;
       }
 
-      const tri = grid.triangles[entry.index];
+      const tri = grid.triangles[idx];
 
       let foldEdgeIdx = findEdgeFoldEdge(tri, cw, ch);
       if (foldEdgeIdx === -1) {
         foldEdgeIdx = 0;
-        if (entry.parentIdx >= 0) {
-          const parentTri = grid.triangles[entry.parentIdx];
+        if (parentIdx >= 0) {
+          const parentTri = grid.triangles[parentIdx];
           foldEdgeIdx = findFoldEdge(tri, parentTri);
         }
       }
       startFold(
         anim,
-        now + entry.startTime,
+        now + startTime,
         newColor,
-        colors[entry.index],
+        colors[idx],
         foldEdgeIdx,
         foldDuration
       );
       // Precompute fold projection geometry once — used every frame during fold
-      renderer.cacheFoldGeom(entry.index, foldEdgeIdx);
-      foldingSet.add(entry.index);
+      renderer.cacheFoldGeom(idx, foldEdgeIdx);
+      foldingSet.add(idx);
     }
 
-    const maxScheduleStart = schedule.length > 0
-      ? schedule[schedule.length - 1].startTime
-      : 0;
     dirty = true;
-    activeCascades.push({ schedule, startTime: now, newColor, maxScheduleStart });
+    activeCascades.push({ schedule: [], startTime: now, newColor, maxScheduleStart: flat.maxStartTime });
     currentColor = newColor;
   }
 

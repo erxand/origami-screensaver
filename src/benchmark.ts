@@ -9,7 +9,7 @@
 import { createGrid, buildAdjacency } from './grid.js';
 import { createRenderer } from './renderer.js';
 import { createAnimStates, startFold, updateAnim, resetAnim, findFoldEdge, State } from './animator.js';
-import { buildCascadeSchedule } from './cascade.js';
+import { buildCascadeSchedule, buildCascadeScheduleFlat } from './cascade.js';
 import { createPaletteCycler } from './palette.js';
 
 // ---------------------------------------------------------------------------
@@ -159,6 +159,61 @@ function benchCascadeScheduling(triCount: number, iterations = 50) {
     avgMs: times.reduce((a, b) => a + b, 0) / times.length,
     medianMs: median(times),
     maxMs: Math.max(...times),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Benchmark: flat typed-array BFS vs object-array BFS
+// Measures buildCascadeScheduleFlat vs buildCascadeSchedule to quantify
+// the allocation elimination (no BfsEntry[] + CascadeEntry[] per call).
+// ---------------------------------------------------------------------------
+function benchFlatCascadeSchedule(triCount: number, iterations = 100): {
+  targetTriangles: number;
+  actualTriangles: number;
+  avgObjectMs: number;
+  avgFlatMs: number;
+  speedupRatio: number;
+  maxObjectMs: number;
+  maxFlatMs: number;
+} {
+  const side = Math.max(40, Math.round(Math.sqrt((1920 * 1080 * Math.sqrt(3)) / (4 * triCount))));
+  const grid = createGrid(1920, 1080, side);
+  const adjacency = buildAdjacency(grid.rows, grid.cols);
+  const actualCount = grid.triangles.length;
+
+  const objectTimes: number[] = [];
+  const flatTimes: number[] = [];
+
+  // Warmup
+  for (let i = 0; i < 5; i++) {
+    const origin = Math.floor(Math.random() * actualCount);
+    buildCascadeSchedule(origin, adjacency, 60);
+    buildCascadeScheduleFlat(origin, adjacency, 60);
+  }
+
+  for (let i = 0; i < iterations; i++) {
+    const origin = Math.floor(Math.random() * actualCount);
+
+    const t1 = performance.now();
+    buildCascadeSchedule(origin, adjacency, 60);
+    objectTimes.push(performance.now() - t1);
+
+    const t2 = performance.now();
+    buildCascadeScheduleFlat(origin, adjacency, 60);
+    flatTimes.push(performance.now() - t2);
+  }
+
+  const avgObject = objectTimes.reduce((a, b) => a + b, 0) / objectTimes.length;
+  const avgFlat   = flatTimes.reduce((a, b) => a + b, 0) / flatTimes.length;
+
+  return {
+    targetTriangles: triCount,
+    actualTriangles: actualCount,
+    avgObjectMs:  avgObject,
+    avgFlatMs:    avgFlat,
+    speedupRatio: avgObject / Math.max(avgFlat, 0.00001),
+    maxObjectMs:  Math.max(...objectTimes),
+    maxFlatMs:    Math.max(...flatTimes),
   };
 }
 
@@ -812,6 +867,18 @@ function run(): void {
     console.log(`    Avg:    ${r.avgMs.toFixed(3)} ms`);
     console.log(`    Median: ${r.medianMs.toFixed(3)} ms`);
     console.log(`    Max:    ${r.maxMs.toFixed(3)} ms`);
+    console.log();
+  }
+
+  // 2b. Flat typed-array BFS vs object-array BFS
+  console.log('--- Cascade Schedule: flat typed-array vs object-array BFS ---');
+  console.log();
+  for (const count of triangleCounts) {
+    const r = benchFlatCascadeSchedule(count);
+    console.log(`  ${r.actualTriangles} triangles (target ${count}):`);
+    console.log(`    Object BFS avg:   ${(r.avgObjectMs * 1000).toFixed(1)} µs  (max ${(r.maxObjectMs * 1000).toFixed(0)} µs)`);
+    console.log(`    Flat   BFS avg:   ${(r.avgFlatMs   * 1000).toFixed(1)} µs  (max ${(r.maxFlatMs   * 1000).toFixed(0)} µs)`);
+    console.log(`    Speedup:          ${r.speedupRatio.toFixed(2)}×`);
     console.log();
   }
 
