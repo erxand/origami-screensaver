@@ -228,8 +228,9 @@ export function createControls(screensaver: ScreensaverInstance, opts: ControlsO
   const waitRow = makeSliderRow('Wave Pause', 'oc-wait', 0.5, 30, 0.5, waitSec, 's');
   panel.appendChild(waitRow);
 
-  // Triangle size: 20 → 200px, step 5 (applies on mouseup to avoid thrashing grid)
-  const sideRow = makeSliderRow('Triangle Size', 'oc-size', 20, 200, 5, initSize, 'px');
+  // Triangle size: 0 (auto) → 200px, step 5 (applies on mouseup to avoid thrashing grid)
+  // 0 = auto-size (responsive). Label shows "Auto" when 0.
+  const sideRow = makeSliderRow('Triangle Size', 'oc-size', 0, 200, 5, initSize, 'px');
   panel.appendChild(sideRow);
 
   // Cascades: 1 → 5
@@ -273,8 +274,11 @@ export function createControls(screensaver: ScreensaverInstance, opts: ControlsO
   // Wire size slider — only apply on release (grid rebuild is expensive)
   const sizeSlider = panel.querySelector('#oc-size') as HTMLInputElement;
   const sizeVal    = panel.querySelector('#oc-size-val') as HTMLElement;
+  // Set initial label correctly (0 = Auto)
+  sizeVal.textContent = initSize === 0 ? 'Auto' : initSize + 'px';
   sizeSlider.addEventListener('input', () => {
-    sizeVal.textContent = sizeSlider.value + 'px';
+    const v = parseInt(sizeSlider.value, 10);
+    sizeVal.textContent = v === 0 ? 'Auto' : v + 'px';
   });
   sizeSlider.addEventListener('change', () => {
     const v = parseInt(sizeSlider.value, 10);

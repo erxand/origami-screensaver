@@ -296,7 +296,8 @@ export function createScreensaver(canvas: HTMLCanvasElement, options: Screensave
   function setParam(key: string, value: number): void {
     switch (key) {
       case 'speed':
-        foldDuration = Math.round(400 / Math.max(0.1, value));
+        // Store as float to preserve round-trip accuracy through getParam
+        foldDuration = 400 / Math.max(0.1, value);
         break;
       case 'waitTime':
         waitTime = value;
