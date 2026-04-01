@@ -223,9 +223,9 @@ export function createControls(screensaver: ScreensaverInstance, opts: ControlsO
   const speedRow = makeSliderRow('Fold Speed', 'oc-speed', 0.25, 4, 0.25, initSpeed, '×');
   panel.appendChild(speedRow);
 
-  // Wait time slider: 2 → 30s, step 1
-  const waitSec = Math.round(initWait / 1000);
-  const waitRow = makeSliderRow('Wave Pause', 'oc-wait', 2, 30, 1, waitSec, 's');
+  // Wait time slider: 0.5 → 30s, step 0.5 (matches config.ts min of 500ms)
+  const waitSec = Math.round(initWait / 500) / 2; // round to nearest 0.5s
+  const waitRow = makeSliderRow('Wave Pause', 'oc-wait', 0.5, 30, 0.5, waitSec, 's');
   panel.appendChild(waitRow);
 
   // Triangle size: 20 → 200px, step 5 (applies on mouseup to avoid thrashing grid)
@@ -265,7 +265,7 @@ export function createControls(screensaver: ScreensaverInstance, opts: ControlsO
   const waitSlider = panel.querySelector('#oc-wait') as HTMLInputElement;
   const waitVal    = panel.querySelector('#oc-wait-val') as HTMLElement;
   waitSlider.addEventListener('input', () => {
-    const v = parseInt(waitSlider.value, 10);
+    const v = parseFloat(waitSlider.value);
     waitVal.textContent = v + 's';
     screensaver.setParam('waitTime', v * 1000);
   });

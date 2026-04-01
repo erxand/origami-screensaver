@@ -10,7 +10,7 @@ import { buildCascadeSchedule } from './cascade.js';
 import type { AnimState, RenderAnimState, CascadeEntry, GridResult, Triangle, ScreensaverOptions } from './types.js';
 
 const WAIT_BETWEEN_CASCADES = 8_000;
-const FOLD_DURATION = 600;
+const FOLD_DURATION = 400;
 const CASCADE_DELAY = 60;
 const MAX_CONCURRENT_CASCADES = 2;
 
@@ -296,7 +296,7 @@ export function createScreensaver(canvas: HTMLCanvasElement, options: Screensave
   function setParam(key: string, value: number): void {
     switch (key) {
       case 'speed':
-        foldDuration = Math.round(600 / Math.max(0.1, value));
+        foldDuration = Math.round(400 / Math.max(0.1, value));
         break;
       case 'waitTime':
         waitTime = value;
@@ -330,7 +330,7 @@ export function createScreensaver(canvas: HTMLCanvasElement, options: Screensave
 
   function getParam(key: string): number | undefined {
     switch (key) {
-      case 'speed':        return Math.round((600 / foldDuration) * 100) / 100;
+      case 'speed':        return Math.round((400 / foldDuration) * 100) / 100;
       case 'waitTime':     return waitTime;
       case 'side':         return sideOverride;
       case 'maxConcurrent': return maxConcurrent;
