@@ -302,8 +302,9 @@ export function createScreensaver(canvas: HTMLCanvasElement, options: Screensave
   function setParam(key: string, value: number): void {
     switch (key) {
       case 'speed':
-        // Store as float to preserve round-trip accuracy through getParam
-        foldDuration = 400 / Math.max(0.1, value);
+        // Store as float to preserve round-trip accuracy through getParam.
+        // Clamp to [0.25, 4.0] matching URL param validation and slider range.
+        foldDuration = 400 / Math.max(0.25, Math.min(4.0, value));
         break;
       case 'waitTime':
         waitTime = value;
