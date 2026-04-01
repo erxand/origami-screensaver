@@ -199,8 +199,12 @@ export function createScreensaver(canvas: HTMLCanvasElement, options: Screensave
     ctx.restore();
   }
 
+  let _lastTickNow = 0;
+
   function tick(now: number): void {
     if (!running) return;
+    const dt = _lastTickNow > 0 ? Math.min(100, now - _lastTickNow) : 16;
+    _lastTickNow = now;
     trackFPS(now);
 
     // Prune completed cascades in-place — avoids .filter() allocation each frame
@@ -282,7 +286,7 @@ export function createScreensaver(canvas: HTMLCanvasElement, options: Screensave
 
       if (paletteOverlayTimer > 0) {
         drawPaletteOverlay(paletteOverlayText);
-        paletteOverlayTimer -= 16;
+        paletteOverlayTimer -= dt;
       }
 
       dirty = false;
@@ -303,7 +307,8 @@ export function createScreensaver(canvas: HTMLCanvasElement, options: Screensave
         waitTime = value;
         break;
       case 'side':
-        sideOverride = value;
+        // 0 = auto-size (responsive); positive values clamped to valid range
+        sideOverride = value === 0 ? 0 : Math.max(20, Math.min(200, value));
         if (running && grid) {
           const prevColor = currentColor;
           buildGrid();
@@ -345,6 +350,7 @@ export function createScreensaver(canvas: HTMLCanvasElement, options: Screensave
   return {
     start() {
       running = true;
+      _lastTickNow = 0;
       buildGrid();
       waitingUntil = performance.now() + 2000;
       animFrameId = requestAnimationFrame(tick);
@@ -352,6 +358,7 @@ export function createScreensaver(canvas: HTMLCanvasElement, options: Screensave
 
     stop() {
       running = false;
+      _lastTickNow = 0;
       if (animFrameId != null) {
         cancelAnimationFrame(animFrameId);
         animFrameId = null;
