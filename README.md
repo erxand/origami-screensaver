@@ -154,6 +154,10 @@ Press `P` to cycle palettes with a HUD overlay.
 
 ## Completed
 
+- ✅ **Controls panel Triangle Size shows "Auto" for 0** — slider min changed to 0 (was 20); label shows "Auto" when value=0 instead of "0px"; `setParam('side')` now clamps non-zero values to [20,200] matching URL param validation; prevents accidentally creating sub-20px grid via controls drag
+- ✅ **dt-based palette overlay countdown** — overlay timer now decrements by actual frame delta-time (ms) instead of fixed `-16/frame`; was showing too long at <60fps and too briefly at >60fps; `_lastTickNow` tracks previous frame timestamp, clamped to 100ms to handle tab-background freeze/resume
+- ✅ **SVG favicon** — `public/favicon.svg` eliminates 404 on every page load; simple origami triangle grid icon in Sakura palette colors
+
 - ✅ **Zero-alloc tick loop** — replaced 3 per-frame allocations in the `tick()` hot path: `completedThisTick: number[]` → reuse `Int32Array` scratch buffer (grows lazily when grid size increases); `activeCascades.filter()` → in-place reverse splice (no new array per frame); `fpsSamples.push+shift` → circular `Float64Array(60)` ring buffer; dedicated benchmark section `benchTickLoopOverhead` added; measured **1.70–3.02× speedup** on tick-loop overhead (1.84→1.08 µs/tick at 3000 triangles); eliminates ~180 heap allocations/sec at 60fps
 
 - ✅ **Precomputed fold geometry cache** — `cacheFoldGeom()` computes `[projX, projY, reflApexX, reflApexY]` once per fold-start into a `Float32Array(N×4)`; `drawFoldingTriangleRaw` reads 4 floats instead of computing dot-product + division + 4 multiplies per animating triangle per frame; dedicated benchmark section added; measured **1.40–1.43× speedup** on fold rendering (160µs vs 229µs/frame at 3000 triangles during cascades)
