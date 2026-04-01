@@ -34,7 +34,7 @@ interface ActiveCascade {
 
 export function createScreensaver(canvas: HTMLCanvasElement, options: ScreensaverOptions = {}) {
   const fixedSide     = options.side || 0;
-  const targetDensity = options.density ?? 1000;
+  const targetDensity = options.density ?? 500;
   const cascadeDelay  = options.cascadeDelay ?? CASCADE_DELAY;
   const startPaletteIdx = options.paletteIdx ?? 0;
 

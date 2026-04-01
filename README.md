@@ -152,8 +152,11 @@ Press `P` to cycle palettes with a HUD overlay.
 
 - [ ] **[ONGOING-A] Performance — always be optimizing.** Profile, find bottleneck, fix it, measure. Areas: OffscreenCanvas + Worker for texture gen, batch same-color triangles into single path, WebGL renderer for 1000+ tris.
 - [ ] **[ONGOING-B] Bug hunting — use the app, break it.** Alternate with performance work. Actually run the screensaver, interact with it like a user would, and find bugs. Known example: switching palettes mid-transition leaves 3 colors on screen. Try: rapid palette switches, resizing window during cascade, very slow/fast speed params, switching palettes at exact start/end of cascade, leaving it running for 10+ minutes and watching for drift or stuck states, URL param edge cases. When you find a bug: fix it immediately if straightforward, or add it to Roadmap with a clear description if complex. Track which bugs you found and fixed in ## Completed.
+- [ ] **[BUG CANDIDATE] `setParam('speed', ...)` vs URL ?speed= clamp inconsistency** — URL ?speed clamps to [0.25, 4.0] before computing foldDuration, but `setParam('speed', v)` clamps only at 0.1; the slider min is 0.25 so this only matters for direct API callers, but the clamping should be unified in `setParam`.
 
 ## Completed
+
+- ✅ **screensaver.ts density default mismatch** — `targetDensity` default was `?? 1000` in screensaver.ts but config.ts defaults to 500 (per comments and URL roundtrip logic); corrected to `?? 500` so direct `createScreensaver()` calls and URL-param configs behave consistently; tested across all size/palette combos.
 
 - ✅ **Controls panel Triangle Size shows "Auto" for 0** — slider min changed to 0 (was 20); label shows "Auto" when value=0 instead of "0px"; `setParam('side')` now clamps non-zero values to [20,200] matching URL param validation; prevents accidentally creating sub-20px grid via controls drag
 - ✅ **dt-based palette overlay countdown** — overlay timer now decrements by actual frame delta-time (ms) instead of fixed `-16/frame`; was showing too long at <60fps and too briefly at >60fps; `_lastTickNow` tracks previous frame timestamp, clamped to 100ms to handle tab-background freeze/resume
