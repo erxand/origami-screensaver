@@ -27,6 +27,7 @@ export function createAnimState(): AnimState {
     oldColor: null,
     newColor: null,
     foldEdgeIdx: 0,    // which edge to fold along
+    pendingColor: null, // deferred redirect color for cascades overlapping mid-fold
   };
 }
 
@@ -48,6 +49,7 @@ export function startFold(
   animState.oldColor = oldColor;
   animState.newColor = newColor;
   animState.foldEdgeIdx = foldEdgeIdx;
+  animState.pendingColor = null;
 }
 
 /**
@@ -77,6 +79,7 @@ export function resetAnim(animState: AnimState): void {
   animState.progress = 0;
   animState.oldColor = null;
   animState.newColor = null;
+  animState.pendingColor = null;
 }
 
 /**

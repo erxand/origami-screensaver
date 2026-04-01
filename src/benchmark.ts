@@ -830,6 +830,140 @@ function benchTickLoopOverhead(triCount: number, frames = 5000): {
 }
 
 // ---------------------------------------------------------------------------
+// Benchmark: fused update+renderAnims loop vs two separate foldingSet passes
+// Measures the savings from collapsing "update animStates" + "copy to renderAnims"
+// into a single foldingSet iteration.
+// ---------------------------------------------------------------------------
+function benchFusedTickLoop(triCount: number, frames = 10000): {
+  targetTriangles: number;
+  actualTriangles: number;
+  animatingCount: number;
+  avgTwoPassUs: number;
+  avgFusedUs: number;
+  speedupRatio: number;
+} {
+  const side = Math.max(40, Math.round(Math.sqrt((1920 * 1080 * Math.sqrt(3)) / (4 * triCount))));
+  const grid = createGrid(1920, 1080, side);
+  const adjacency = buildAdjacency(grid.rows, grid.cols);
+  const actualCount = grid.triangles.length;
+
+  const originIdx = Math.floor(actualCount / 2);
+  const schedule = buildCascadeSchedule(originIdx, adjacency, 60);
+  const baseTime = 1000;
+
+  type FakeRenderAnim = { progress: number; oldColor: string; newColor: string; foldEdgeIdx: number } | null;
+
+  function setup(): { foldingSet: Set<number>; animStates: ReturnType<typeof createAnimStates>; renderAnims: FakeRenderAnim[] } {
+    const foldingSet = new Set<number>();
+    const animStates = createAnimStates(actualCount);
+    const renderAnims: FakeRenderAnim[] = new Array(actualCount).fill(null);
+    for (const e of schedule) {
+      const tri = grid.triangles[e.index];
+      let fei = 0;
+      if (e.parentIdx >= 0) fei = findFoldEdge(tri, grid.triangles[e.parentIdx]);
+      startFold(animStates[e.index], baseTime + e.startTime, '#8ee3ef', '#f8c3cd', fei, 400);
+      foldingSet.add(e.index);
+    }
+    return { foldingSet, animStates, renderAnims };
+  }
+
+  // --- TWO-PASS (old approach): iterate foldingSet once to update, once to copy renderAnims ---
+  const twoPassTimes: number[] = [];
+  {
+    const { foldingSet, animStates, renderAnims } = setup();
+    // Warmup
+    for (let f = 0; f < 200; f++) {
+      const now = baseTime + f * 16.67;
+      for (const i of foldingSet) {
+        const anim = animStates[i];
+        if (anim.state === State.FOLDING && anim.startTime <= now) updateAnim(anim, now);
+      }
+      for (const i of foldingSet) {
+        const a = animStates[i];
+        if (a.state === State.FOLDING && a.startTime <= now) {
+          if (!renderAnims[i]) renderAnims[i] = { progress: 0, oldColor: '', newColor: '', foldEdgeIdx: 0 };
+          const ra = renderAnims[i]!;
+          ra.progress = a.progress; ra.oldColor = a.oldColor!; ra.newColor = a.newColor!; ra.foldEdgeIdx = a.foldEdgeIdx;
+        } else {
+          renderAnims[i] = null;
+        }
+      }
+    }
+    for (let f = 0; f < frames; f++) {
+      const now = baseTime + f * 16.67;
+      const t0 = performance.now();
+      // Pass 1: update state
+      for (const i of foldingSet) {
+        const anim = animStates[i];
+        if (anim.state === State.FOLDING && anim.startTime <= now) updateAnim(anim, now);
+      }
+      // Pass 2: copy to renderAnims
+      for (const i of foldingSet) {
+        const a = animStates[i];
+        if (a.state === State.FOLDING && a.startTime <= now) {
+          if (!renderAnims[i]) renderAnims[i] = { progress: 0, oldColor: '', newColor: '', foldEdgeIdx: 0 };
+          const ra = renderAnims[i]!;
+          ra.progress = a.progress; ra.oldColor = a.oldColor!; ra.newColor = a.newColor!; ra.foldEdgeIdx = a.foldEdgeIdx;
+        } else {
+          renderAnims[i] = null;
+        }
+      }
+      twoPassTimes.push((performance.now() - t0) * 1000);
+    }
+  }
+
+  // --- FUSED (new approach): single pass, update + copy renderAnims inline ---
+  const fusedTimes: number[] = [];
+  {
+    const { foldingSet, animStates, renderAnims } = setup();
+    // Warmup
+    for (let f = 0; f < 200; f++) {
+      const now = baseTime + f * 16.67;
+      for (const i of foldingSet) {
+        const anim = animStates[i];
+        if (anim.state === State.FOLDING && anim.startTime <= now) {
+          updateAnim(anim, now);
+          if (!renderAnims[i]) renderAnims[i] = { progress: 0, oldColor: '', newColor: '', foldEdgeIdx: 0 };
+          const ra = renderAnims[i]!;
+          ra.progress = anim.progress; ra.oldColor = anim.oldColor!; ra.newColor = anim.newColor!; ra.foldEdgeIdx = anim.foldEdgeIdx;
+        } else {
+          renderAnims[i] = null;
+        }
+      }
+    }
+    for (let f = 0; f < frames; f++) {
+      const now = baseTime + f * 16.67;
+      const t0 = performance.now();
+      // Single fused pass
+      for (const i of foldingSet) {
+        const anim = animStates[i];
+        if (anim.state === State.FOLDING && anim.startTime <= now) {
+          updateAnim(anim, now);
+          if (!renderAnims[i]) renderAnims[i] = { progress: 0, oldColor: '', newColor: '', foldEdgeIdx: 0 };
+          const ra = renderAnims[i]!;
+          ra.progress = anim.progress; ra.oldColor = anim.oldColor!; ra.newColor = anim.newColor!; ra.foldEdgeIdx = anim.foldEdgeIdx;
+        } else {
+          renderAnims[i] = null;
+        }
+      }
+      fusedTimes.push((performance.now() - t0) * 1000);
+    }
+  }
+
+  const avgTwoPass = twoPassTimes.reduce((a, b) => a + b, 0) / twoPassTimes.length;
+  const avgFused   = fusedTimes.reduce((a, b) => a + b, 0) / fusedTimes.length;
+
+  return {
+    targetTriangles: triCount,
+    actualTriangles: actualCount,
+    animatingCount: schedule.length,
+    avgTwoPassUs: avgTwoPass,
+    avgFusedUs: avgFused,
+    speedupRatio: avgTwoPass / Math.max(avgFused, 0.0001),
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Run all benchmarks
 // ---------------------------------------------------------------------------
 function run(): void {
@@ -954,6 +1088,19 @@ function run(): void {
     console.log(`    Allocating (new[] per frame): ${r.avgAllocatingUs.toFixed(2)} µs/tick`);
     console.log(`    Pre-allocated (reuse):        ${r.avgPreallocUs.toFixed(2)} µs/tick`);
     console.log(`    Speedup:                      ${r.speedupRatio.toFixed(2)}×`);
+    console.log();
+  }
+
+  // 4f. Fused update+renderAnims loop vs two separate foldingSet passes
+  console.log('--- Fused Tick Loop: two-pass vs single-pass update+renderAnims ---');
+  console.log('    (fused: update animState + copy to renderAnims in one foldingSet scan)');
+  console.log();
+  for (const count of triangleCounts) {
+    const r = benchFusedTickLoop(count);
+    console.log(`  ${r.actualTriangles} triangles (target ${count}), ${r.animatingCount} animating:`);
+    console.log(`    Two-pass (separate update + copy): ${r.avgTwoPassUs.toFixed(2)} µs/tick`);
+    console.log(`    Single-pass (fused):               ${r.avgFusedUs.toFixed(2)} µs/tick`);
+    console.log(`    Speedup:                           ${r.speedupRatio.toFixed(2)}×`);
     console.log();
   }
 

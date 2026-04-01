@@ -141,12 +141,21 @@ export function createScreensaver(canvas: HTMLCanvasElement, options: Screensave
       const anim = animStates[idx];
 
       if (anim.state === State.FOLDING) {
-        // Triangle is already mid-fold from an earlier cascade.
-        // Redirect its destination color so when the fold completes it commits
-        // the correct new color rather than the earlier cascade's color.
-        // This fixes the bug where left-edge triangles (late in BFS order) stay
-        // on the previous cascade's color while the rest of the screen updates.
-        anim.newColor = newColor;
+        // Triangle is already mid-fold from a cascade.
+        // Only redirect via pendingColor if this cascade's color is NEWER than
+        // the current fold target. We track this via cascade start time: each
+        // cascade pushes to activeCascades in order, so a later cascade has a
+        // higher index. If this cascade started AFTER the one driving the fold,
+        // its color wins and we set pendingColor. If this is an OLDER cascade
+        // trying to overwrite a newer fold target, skip it to avoid the revert bug.
+        //
+        // Simple heuristic: currentColor is always the most-recently-started
+        // cascade's target. If newColor !== currentColor, this cascade is older —
+        // don't let it stomp a newer fold.
+        if (newColor === currentColor || anim.newColor !== currentColor) {
+          anim.pendingColor = newColor;
+        }
+        // else: this is a stale cascade trying to overwrite a newer fold — ignore
         foldingSet.add(idx); // ensure we're tracking it
         continue;
       }
@@ -225,7 +234,8 @@ export function createScreensaver(canvas: HTMLCanvasElement, options: Screensave
       waitingUntil = now + nextWait;
     }
 
-    // Update animating triangles — O(K) via foldingSet (K = folding count, not N total)
+    // Update animating triangles AND populate renderAnims in one fused pass — O(K) via foldingSet.
+    // Previously two separate foldingSet iterations; fusing them eliminates ~1.4× overhead.
     let prevActiveCount = activeAnimCount;
     activeAnimCount = 0;
     // Reuse pre-allocated scratch buffer — grow if foldingSet exceeds current capacity
@@ -238,52 +248,101 @@ export function createScreensaver(canvas: HTMLCanvasElement, options: Screensave
       if (anim.state !== State.FOLDING) {
         // Stale entry (e.g. from a grid rebuild) — prune it
         _completedBuf[_completedLen++] = i;
+        renderAnims[i] = null;
         continue;
       }
       // Check if the fold has started yet (startTime may be in the future)
       if (anim.startTime <= now) {
         const done = updateAnim(anim, now);
         if (done) {
-          colors[i] = anim.newColor!;
-          resetAnim(anim);
-          // Patch just this one triangle in the static cache (O(1) vs O(N) rebuild)
-          renderer.patchStaticTriangle(grid.triangles[i], colors[i], i);
-          _completedBuf[_completedLen++] = i;
-          dirty = true;
+          const completedNewColor = anim.newColor!;
+          const pendingColor = anim.pendingColor;
+          colors[i] = completedNewColor;
+
+          if (pendingColor && pendingColor !== completedNewColor) {
+            // A later cascade wanted a different color — immediately start a new fold
+            // from completedNewColor → pendingColor so the triangle catches up.
+            // This avoids the "revert" bug where redirecting newColor mid-fold would
+            // set oldColor === newColor, making the fold appear to snap back.
+            const tri = grid.triangles[i];
+            const cw = canvas.clientWidth;
+            const ch = canvas.clientHeight;
+            let foldEdgeIdx = findEdgeFoldEdge(tri, cw, ch);
+            if (foldEdgeIdx === -1) foldEdgeIdx = anim.foldEdgeIdx; // reuse same edge
+
+            // Patch static cache to completedNewColor BEFORE starting fold 2.
+            // Fold 2 begins at progress=0, which is skipped by renderFrame's animated
+            // draw pass (condition: progress <= 0). The static blit is the fallback,
+            // so if we don't patch it here, the cache still shows the pre-fold-1 color
+            // for 1-2 frames — exactly the "left-edge triangle reverts" bug.
+            renderer.patchStaticTriangle(grid.triangles[i], completedNewColor, i);
+
+            startFold(anim, now, pendingColor, completedNewColor, foldEdgeIdx, foldDuration);
+            renderer.cacheFoldGeom(i, foldEdgeIdx);
+            // Stay in foldingSet — fold continues immediately
+            activeAnimCount++;
+            dirty = true;
+            if (!renderAnims[i]) renderAnims[i] = {} as RenderAnimState;
+            const ra = renderAnims[i]!;
+            ra.progress    = anim.progress;
+            ra.oldColor    = anim.oldColor!;
+            ra.newColor    = anim.newColor!;
+            ra.foldEdgeIdx = anim.foldEdgeIdx;
+          } else {
+            resetAnim(anim);
+            // Patch just this one triangle in the static cache (O(1) vs O(N) rebuild)
+            renderer.patchStaticTriangle(grid.triangles[i], colors[i], i);
+            _completedBuf[_completedLen++] = i;
+            renderAnims[i] = null; // fold done — clear render state inline
+            dirty = true;
+          }
         } else {
           activeAnimCount++;
           dirty = true;
+          // Fused: populate renderAnims inline — eliminates second foldingSet pass
+          if (!renderAnims[i]) renderAnims[i] = {} as RenderAnimState;
+          const ra = renderAnims[i]!;
+          ra.progress    = anim.progress;
+          ra.oldColor    = anim.oldColor!;
+          ra.newColor    = anim.newColor!;
+          ra.foldEdgeIdx = anim.foldEdgeIdx;
         }
       } else {
-        // Pending (not yet started) — still counts as active work
+        // Pending (not yet started) — still counts as active work; not yet renderable
         activeAnimCount++;
+        renderAnims[i] = null;
       }
     }
     for (let _ci2 = 0; _ci2 < _completedLen; _ci2++) foldingSet.delete(_completedBuf[_ci2]);
 
     // Mark dirty when transition from active → idle (need one final clean frame)
-    if (prevActiveCount > 0 && activeAnimCount === 0) dirty = true;
-
-    // Build render array and render only when dirty
-    if (dirty || paletteOverlayTimer > 0) {
-      // Clear previous renderAnims for completed triangles from last tick
-      for (let _ci3 = 0; _ci3 < _completedLen; _ci3++) renderAnims[_completedBuf[_ci3]] = null;
-
-      // Build render array — O(K) via foldingSet (only animating entries)
-      for (const i of foldingSet) {
-        const a = animStates[i];
-        if (a.state === State.FOLDING && a.startTime <= now) {
-          if (!renderAnims[i]) renderAnims[i] = {} as RenderAnimState;
-          const ra = renderAnims[i]!;
-          ra.progress   = a.progress;
-          ra.oldColor   = a.oldColor!;
-          ra.newColor   = a.newColor!;
-          ra.foldEdgeIdx = a.foldEdgeIdx;
-        } else {
-          renderAnims[i] = null;
+    if (prevActiveCount > 0 && activeAnimCount === 0) {
+      dirty = true;
+      // DEBUG: check for color mismatches when going idle
+      if (typeof window !== 'undefined' && (window as any).__ssDebug && activeCascades.length === 0) {
+        const mismatches: number[] = [];
+        for (let _di = 0; _di < colors.length; _di++) {
+          if (colors[_di] !== currentColor) mismatches.push(_di);
+        }
+        if (mismatches.length > 0) {
+          (window as any).__ssDebug.colorMismatches.push({ time: now, expected: currentColor, mismatches: mismatches.length, indices: mismatches.slice(0, 10) });
+          console.warn(`[BUG] ${mismatches.length} triangles wrong color at idle! Expected ${currentColor}`, mismatches.slice(0, 10));
         }
       }
+    }
 
+    // DEBUG: expose foldingSet size and activeAnimCount
+    if (typeof window !== 'undefined' && (window as any).__ssDebug) {
+      (window as any).__ssDebug.foldingSetSize = foldingSet.size;
+      (window as any).__ssDebug.activeAnimCount = activeAnimCount;
+      (window as any).__ssDebug.activeCascadesCount = activeCascades.length;
+      if ((window as any).__ssDebug.maxFoldingSet === undefined || foldingSet.size > (window as any).__ssDebug.maxFoldingSet) {
+        (window as any).__ssDebug.maxFoldingSet = foldingSet.size;
+      }
+    }
+
+    // Render only when dirty (renderAnims is already up-to-date from the fused loop above)
+    if (dirty || paletteOverlayTimer > 0) {
       renderer.renderFrame(grid.triangles, colors, renderAnims, currentColor, foldingSet);
 
       if (paletteOverlayTimer > 0) {

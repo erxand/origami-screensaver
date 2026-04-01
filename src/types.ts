@@ -21,6 +21,13 @@ export interface AnimState {
   oldColor: string | null;
   newColor: string | null;
   foldEdgeIdx: number;
+  /**
+   * When a new cascade redirects a mid-fold triangle, the desired target
+   * color is stored here instead of overwriting newColor (which would corrupt
+   * the in-progress animation). When the fold completes, if pendingColor is
+   * set, a new fold is immediately started from newColor → pendingColor.
+   */
+  pendingColor: string | null;
 }
 
 export interface RenderAnimState {
