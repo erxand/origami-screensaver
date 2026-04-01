@@ -124,7 +124,7 @@ npm run build      # Production build
 
 ## Tests
 
-143 tests across 9 test files:
+147 tests across 9 test files:
 
 | File | Tests | Covers |
 |------|-------|--------|
@@ -136,7 +136,7 @@ npm run build      # Production build
 | `easing.test.js` | 23 | Easing function correctness |
 | `benchmark.test.js` | 4 | Benchmark harness correctness |
 | `config.test.js` | 24 | URL param parsing, validation, round-trip |
-| `visual-regression.test.js` | 10 | Headless simulation: stuck triangles, cascade completion, 5-min stability |
+| `visual-regression.test.js` | 14 | Headless simulation: stuck triangles, cascade completion, 5-min stability, cascade overlap color revert |
 
 ## Color Palettes
 
