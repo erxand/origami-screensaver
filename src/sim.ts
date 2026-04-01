@@ -122,7 +122,15 @@ export function createSim(options: SimOptions = {}) {
 
     for (const entry of schedule) {
       const anim = animStates[entry.index];
-      if (anim.state === State.FOLDING) continue;
+      if (anim.state === State.FOLDING) {
+        // Mirror screensaver.ts: always redirect pending folds to this (newer) cascade's color.
+        // This is the key fix for the left-edge triangle color revert bug — earlier cascades
+        // set startTime far in the future for far-away triangles, so cascade B arrives while
+        // they are State.FOLDING but haven't visually started yet. Without pendingColor, they
+        // complete to the stale cascade A color. See screensaver.ts startCascade() for details.
+        anim.pendingColor = newColor;
+        continue;
+      }
 
       let foldEdgeIdx = 0;
       if (entry.parentIdx >= 0) {
@@ -155,9 +163,16 @@ export function createSim(options: SimOptions = {}) {
       if (a.state === State.FOLDING) {
         const done = updateAnim(a, now);
         if (done) {
-          colors[i] = a.newColor!;
-          resetAnim(a);
+          const completedColor = a.newColor!;
+          const pending = a.pendingColor;
+          colors[i] = completedColor;
           totalTrianglesFolded++;
+          if (pending && pending !== completedColor) {
+            // A later cascade requested a different color — chain immediately.
+            startFold(a, now, pending, completedColor, a.foldEdgeIdx, foldDuration);
+          } else {
+            resetAnim(a);
+          }
         }
       }
     }

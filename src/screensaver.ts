@@ -141,21 +141,23 @@ export function createScreensaver(canvas: HTMLCanvasElement, options: Screensave
       const anim = animStates[idx];
 
       if (anim.state === State.FOLDING) {
-        // Triangle is already mid-fold from a cascade.
-        // Only redirect via pendingColor if this cascade's color is NEWER than
-        // the current fold target. We track this via cascade start time: each
-        // cascade pushes to activeCascades in order, so a later cascade has a
-        // higher index. If this cascade started AFTER the one driving the fold,
-        // its color wins and we set pendingColor. If this is an OLDER cascade
-        // trying to overwrite a newer fold target, skip it to avoid the revert bug.
+        // Triangle is already mid-fold from an earlier cascade.
+        // Always set pendingColor to this cascade's target color.
         //
-        // Simple heuristic: currentColor is always the most-recently-started
-        // cascade's target. If newColor !== currentColor, this cascade is older —
-        // don't let it stomp a newer fold.
-        if (newColor === currentColor || anim.newColor !== currentColor) {
-          anim.pendingColor = newColor;
-        }
-        // else: this is a stale cascade trying to overwrite a newer fold — ignore
+        // Why always? startCascade() is called in strictly chronological order:
+        // Cascade A first, then B, then C. By the time we reach this branch,
+        // `newColor` is ALWAYS from a newer cascade than whatever drove the
+        // current fold (since startFold was called by an earlier startCascade).
+        // The last write to pendingColor wins — which is always the newest cascade.
+        //
+        // The old conditional (`newColor === currentColor || anim.newColor !== currentColor`)
+        // was broken: at the time of the check, `currentColor` still holds the
+        // PREVIOUS cascade's color (it's updated at the END of startCascade),
+        // so when Cascade B encounters a triangle folding toward Cascade A's color,
+        // `newColor !== currentColor` AND `anim.newColor === currentColor` both
+        // evaluate in the wrong direction → pendingColor was NEVER set for those
+        // triangles → they completed to the old color and reverted. Fixed here.
+        anim.pendingColor = newColor;
         foldingSet.add(idx); // ensure we're tracking it
         continue;
       }
