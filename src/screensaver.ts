@@ -355,6 +355,7 @@ export function createScreensaver(canvas: HTMLCanvasElement, options: Screensave
       if (paletteOverlayTimer > 0) {
         drawPaletteOverlay(paletteOverlayText);
         paletteOverlayTimer -= dt;
+        if (paletteOverlayTimer <= 0) dirty = true; // one more clean frame to clear overlay
       }
 
       dirty = false;
