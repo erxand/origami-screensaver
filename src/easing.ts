@@ -50,16 +50,36 @@ export function applyVariableCascadeEasing(
 }
 
 /**
- * Spring overshoot easing — goes past 1.0 then settles back.
- * Used for the fold to simulate paper overshooting ~185° then easing to 180°.
- * Overshoot peaks at ~1.03 around t≈0.82, then eases back to 1.0.
+ * Three-phase fold easing with spring overshoot:
+ *   Phase 1 (0–0.25):   Slow start — paper peeling off, ease-in
+ *   Phase 2 (0.25–0.80): Cruising — steady, natural speed
+ *   Phase 3 (0.80–1.0):  Fast finish — paper snapping down, ease-out with overshoot
+ *
+ * Output is continuous and smooth (no visible kinks between phases).
+ * Overshoots to ~1.03 then settles to 1.0 to simulate paper bounce.
  */
 export function easeWithOvershoot(t: number): number {
   if (t <= 0) return 0;
   if (t >= 1) return 1;
-  // Back-ease-out formula: overshoots then returns
-  // s controls overshoot amount (~0.03 overshoot of final value)
-  const s = 1.0;
-  const t1 = t - 1;
-  return 1 + t1 * t1 * ((s + 1) * t1 + s);
+
+  // Phase 1: slow start (ease-in quadratic, mapped to 0→0.15 of output)
+  if (t < 0.25) {
+    const p = t / 0.25; // 0→1 within phase
+    return p * p * 0.15; // quadratic ease-in, covers 0→0.15
+  }
+
+  // Phase 2: cruising (linear-ish, covers 0.15→0.85 of output)
+  if (t < 0.80) {
+    const p = (t - 0.25) / 0.55; // 0→1 within phase
+    return 0.15 + p * 0.70; // linear, covers 0.15→0.85
+  }
+
+  // Phase 3: fast finish with overshoot (0.85→~1.03→1.0)
+  const p = (t - 0.80) / 0.20; // 0→1 within phase
+  // Cubic ease-out that overshoots: peaks at ~1.03, settles to 1.0
+  const s = 1.2; // overshoot strength
+  const p1 = p - 1;
+  const overshoot = 1 + p1 * p1 * ((s + 1) * p1 + s);
+  // Map from 0→1+overshoot to 0.85→1.0+overshoot
+  return 0.85 + overshoot * 0.15;
 }
