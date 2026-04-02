@@ -421,6 +421,9 @@ export function createRenderer(ctx: CanvasRenderingContext2D, triCoords?: Float3
 
   /**
    * Ensure the offscreen canvas exists and matches the current output size.
+   * On HiDPI displays, the static canvas is allocated at physical pixel resolution
+   * (w*dpr × h*dpr) with a matching scale transform — so idle triangles render at
+   * full Retina resolution, matching the animating triangles drawn on the main canvas.
    */
   function ensureStaticCanvas(w: number, h: number): void {
     try {
@@ -429,8 +432,12 @@ export function createRenderer(ctx: CanvasRenderingContext2D, triCoords?: Float3
         staticCtx = staticCanvas.getContext('2d');
       }
       if (staticWidth !== w || staticHeight !== h) {
-        staticCanvas.width = w;
-        staticCanvas.height = h;
+        const dpr = (typeof window !== 'undefined' ? window.devicePixelRatio : 1) || 1;
+        staticCanvas.width = w * dpr;
+        staticCanvas.height = h * dpr;
+        if (staticCtx && dpr !== 1) {
+          staticCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        }
         staticWidth = w;
         staticHeight = h;
         staticDirty = true;
@@ -824,12 +831,15 @@ export function createRenderer(ctx: CanvasRenderingContext2D, triCoords?: Float3
         }
 
         // Blit static layer (one drawImage — replaces N fill+stroke calls)
+        // Draw at CSS-pixel dimensions (w×h) — the main canvas has a DPR scale
+        // transform, and the static canvas is allocated at physical pixel resolution,
+        // so we explicitly size the blit to CSS pixels to avoid double-scaling on Retina.
         this.clear(bgColor);
         ctx.save();
         ctx.beginPath();
         ctx.rect(0, 0, w, h);
         ctx.clip();
-        ctx.drawImage(staticCanvas, 0, 0);
+        ctx.drawImage(staticCanvas, 0, 0, w, h);
 
         // Set lineWidth once per frame — applyDepthShading skips redundant per-triangle sets
         ctx.lineWidth = 0.7;
