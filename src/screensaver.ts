@@ -11,7 +11,7 @@ import type { AnimState, RenderAnimState, GridResult, Triangle, ScreensaverOptio
 
 const WAIT_BETWEEN_CASCADES = 8_000;
 const FOLD_DURATION = 400;
-const CASCADE_DELAY = 60;
+const CASCADE_DELAY = 60; // default, overridden at cascade start to match fold duration
 const MAX_CONCURRENT_CASCADES = 2;
 
 /**
@@ -129,7 +129,11 @@ export function createScreensaver(canvas: HTMLCanvasElement, options: Screensave
     const newColor = forcedColor || cycler.nextColor();
     const originIdx = Math.floor(Math.random() * grid.triangles.length);
     // Zero-alloc flat BFS — returns typed-array views, no JS object allocation
-    const flat = buildCascadeScheduleFlat(originIdx, adjacency, cascadeDelay);
+    // Cascade delay = fold duration so each ring finishes before the next starts.
+    // A small overlap (90% of fold duration) keeps the wave feeling fluid
+    // while ensuring only ~1 ring is actively folding at a time.
+    const effectiveDelay = foldDuration * 0.9;
+    const flat = buildCascadeScheduleFlat(originIdx, adjacency, effectiveDelay);
 
     const cw = canvas.clientWidth;
     const ch = canvas.clientHeight;
