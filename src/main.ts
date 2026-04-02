@@ -34,7 +34,16 @@ const screensaver = createScreensaver(canvas, {
 
 screensaver.start();
 
-window.addEventListener('resize', () => screensaver.resize());
+// Debounce resize to avoid thrashing grid rebuilds during drag-resize.
+// 150ms is enough to batch rapid events while feeling responsive.
+let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+window.addEventListener('resize', () => {
+  if (resizeTimer) clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    resizeTimer = null;
+    screensaver.resize();
+  }, 150);
+});
 
 // Live controls overlay (press C)
 const controls = createControls(screensaver, {

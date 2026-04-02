@@ -834,7 +834,8 @@ export function createRenderer(ctx: CanvasRenderingContext2D, triCoords?: Float3
         // Draw at CSS-pixel dimensions (w×h) — the main canvas has a DPR scale
         // transform, and the static canvas is allocated at physical pixel resolution,
         // so we explicitly size the blit to CSS pixels to avoid double-scaling on Retina.
-        this.clear(bgColor);
+        // No clear() needed — the static canvas already includes the bgColor fill
+        // and covers the entire area, so drawImage overwrites all pixels.
         ctx.save();
         ctx.beginPath();
         ctx.rect(0, 0, w, h);
