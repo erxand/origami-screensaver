@@ -167,11 +167,12 @@ describe('createRenderer', () => {
     expect(ctx.fill.mock.calls.length).toBeGreaterThanOrEqual(2);
   });
 
-  it('drawFoldingTriangle at progress=0.01 draws old color on top of new', () => {
+  it('drawFoldingTriangle at progress=0.01 draws old color base + new color flap', () => {
     const ctx = mockCtx();
     const r = createRenderer(ctx);
     const pts = [[0, 0], [100, 0], [50, 86]];
     r.drawFoldingTriangle(pts, '#aaa', '#bbb', 0.01, 0);
+    // Base (old color) + flap (new color) = 2 fills
     expect(ctx.fill.mock.calls.length).toBeGreaterThanOrEqual(2);
   });
 

@@ -720,62 +720,44 @@ export function createRenderer(ctx: CanvasRenderingContext2D, triCoords?: Float3
 
       const p = Math.min(1.05, Math.max(0, progress));
 
-      // Draw base triangle (full shape, current backing color)
+      // Kami 2-style fold: a new-color flap folds OVER from the fold edge,
+      // progressively covering the old-color base.
+      //
+      // The base always shows OLD color. The flap starts edge-on at the fold
+      // edge (invisible at p=0) and swings down to fully cover the triangle
+      // (flat at p=1). The apex of the flap moves from the projection point
+      // on the fold edge toward the triangle's own apex.
+      //
+      // p=0:     flap edge-on (invisible)
+      // p=0→1:   flap sweeps down, apex moves projPoint → apex
+      // p=1+:    spring overshoot (apex goes slightly past, then settles)
+
+      // Draw base triangle — OLD color (visible underneath the incoming flap)
       ctx.beginPath();
-      // Reconstruct original point order from foldEdgeIdx and raw coords
-      // ex0=points[foldEdgeIdx], ex1=points[(foldEdgeIdx+1)%3], ax=points[(foldEdgeIdx+2)%3]
-      // For tracePath we need all 3 original points; we have them as ex0/ey0, ex1/ey1, ax/ay
       ctx.moveTo(ex0, ey0);
       ctx.lineTo(ex1, ey1);
       ctx.lineTo(ax, ay);
       ctx.closePath();
+      ctx.fillStyle = variedOld;
+      ctx.fill();
+      applyDepthShading(variedOld);
 
-      if (p <= 0.5) {
-        // First half: old color face folding up toward the edge
-        const phase = p * 2; // 0..1
-        const scale = 1 - phase;
-        const foldedApexX = projX + (ax - projX) * scale;
-        const foldedApexY = projY + (ay - projY) * scale;
+      // Draw the new-color flap folding down from edge onto our triangle
+      if (p > 0.005) {
+        const flapProgress = Math.min(1.1, p); // allow slight overshoot
+        const flapApexX = projX + (ax - projX) * flapProgress;
+        const flapApexY = projY + (ay - projY) * flapProgress;
 
-        // Reveal new color underneath
-        ctx.fillStyle = variedNew;
+        ctx.beginPath();
+        ctx.moveTo(ex0, ey0);
+        ctx.lineTo(ex1, ey1);
+        ctx.lineTo(flapApexX, flapApexY);
+        ctx.closePath();
+        // Slight shadow while angled, fades to full color as flap lands flat
+        const shadowAmount = Math.max(0, (1 - flapProgress) * 0.25);
+        ctx.fillStyle = darkenedHex(variedNew, shadowAmount);
         ctx.fill();
         applyDepthShading(variedNew);
-
-        // Draw the folding flap — single pre-blended fill (eliminates 1 ctx.fill per flap per frame)
-        if (scale > 0.005) {
-          ctx.beginPath();
-          ctx.moveTo(ex0, ey0);
-          ctx.lineTo(ex1, ey1);
-          ctx.lineTo(foldedApexX, foldedApexY);
-          ctx.closePath();
-          ctx.fillStyle = darkenedHex(variedOld, phase * 0.85);
-          ctx.fill();
-          applyDepthShading(variedOld);
-        }
-      } else {
-        // Second half (+ overshoot): new color face unfolding from edge onto new position
-        const phase = (p - 0.5) * 2;
-        const overshootPhase = Math.min(1.1, phase);
-        const foldedApexX = projX + (reflApexX - projX) * overshootPhase;
-        const foldedApexY = projY + (reflApexY - projY) * overshootPhase;
-
-        // Draw the base (new color)
-        ctx.fillStyle = variedNew;
-        ctx.fill();
-        applyDepthShading(variedNew);
-
-        // Draw the folding flap coming down — single pre-blended fill
-        if (overshootPhase < 1.0) {
-          ctx.beginPath();
-          ctx.moveTo(ex0, ey0);
-          ctx.lineTo(ex1, ey1);
-          ctx.lineTo(foldedApexX, foldedApexY);
-          ctx.closePath();
-          ctx.fillStyle = darkenedHex(variedNew, (1 - overshootPhase) * 0.5);
-          ctx.fill();
-          applyDepthShading(variedNew);
-        }
       }
     },
 
