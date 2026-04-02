@@ -129,10 +129,10 @@ export function createScreensaver(canvas: HTMLCanvasElement, options: Screensave
     const newColor = forcedColor || cycler.nextColor();
     const originIdx = Math.floor(Math.random() * grid.triangles.length);
     // Zero-alloc flat BFS — returns typed-array views, no JS object allocation
-    // Cascade delay = fold duration so each ring finishes before the next starts.
-    // A small overlap (90% of fold duration) keeps the wave feeling fluid
-    // while ensuring only ~1 ring is actively folding at a time.
-    const effectiveDelay = foldDuration * 0.9;
+    // Cascade delay as a fraction of fold duration — each ring starts when the
+    // previous ring's folds are about halfway done. This keeps the wavefront
+    // thin (only ~2 layers folding at once) while the wave moves at a natural pace.
+    const effectiveDelay = foldDuration * 0.5;
     const flat = buildCascadeScheduleFlat(originIdx, adjacency, effectiveDelay);
 
     const cw = canvas.clientWidth;

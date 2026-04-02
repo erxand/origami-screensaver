@@ -126,8 +126,7 @@ export function buildCascadeScheduleFlat(
       continue;
     }
     const t      = dist / maxDist;
-    const easedT = easeInOutCubic(t);
-    const base   = easedT * totalDuration;
+    const base   = t * totalDuration;
     const jitter = Math.random() * jitterRange;
     const st     = base + jitter;
     _schedStart[i] = st;
