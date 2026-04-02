@@ -134,31 +134,21 @@ export function createScreensaver(canvas: HTMLCanvasElement, options: Screensave
     const cw = canvas.clientWidth;
     const ch = canvas.clientHeight;
 
+    // Track which triangles are part of this cascade so we can find all
+    // valid "fold from" neighbors (not just the BFS parent).
+    const inCascade = new Uint8Array(grid.triangles.length);
+
     for (let fi = 0; fi < flat.length; fi++) {
       const idx       = flat.indices[fi];
       const parentIdx = flat.parents[fi];
       const startTime = flat.startTimes[fi];
       const anim = animStates[idx];
 
+      inCascade[idx] = 1;
+
       if (anim.state === State.FOLDING) {
-        // Triangle is already mid-fold from an earlier cascade.
-        // Always set pendingColor to this cascade's target color.
-        //
-        // Why always? startCascade() is called in strictly chronological order:
-        // Cascade A first, then B, then C. By the time we reach this branch,
-        // `newColor` is ALWAYS from a newer cascade than whatever drove the
-        // current fold (since startFold was called by an earlier startCascade).
-        // The last write to pendingColor wins — which is always the newest cascade.
-        //
-        // The old conditional (`newColor === currentColor || anim.newColor !== currentColor`)
-        // was broken: at the time of the check, `currentColor` still holds the
-        // PREVIOUS cascade's color (it's updated at the END of startCascade),
-        // so when Cascade B encounters a triangle folding toward Cascade A's color,
-        // `newColor !== currentColor` AND `anim.newColor === currentColor` both
-        // evaluate in the wrong direction → pendingColor was NEVER set for those
-        // triangles → they completed to the old color and reverted. Fixed here.
         anim.pendingColor = newColor;
-        foldingSet.add(idx); // ensure we're tracking it
+        foldingSet.add(idx);
         continue;
       }
 
@@ -166,10 +156,26 @@ export function createScreensaver(canvas: HTMLCanvasElement, options: Screensave
 
       let foldEdgeIdx = findEdgeFoldEdge(tri, cw, ch);
       if (foldEdgeIdx === -1) {
-        foldEdgeIdx = 0;
-        if (parentIdx >= 0) {
+        // Find all neighbors already in this cascade — any of them is a valid
+        // "fold from" direction. Randomly pick one so folds in a row don't all
+        // come from the same direction, breaking the mechanical look.
+        const neighbors = adjacency[idx];
+        const validFromNeighbors: number[] = [];
+        for (let ni = 0; ni < neighbors.length; ni++) {
+          if (inCascade[neighbors[ni]]) {
+            validFromNeighbors.push(neighbors[ni]);
+          }
+        }
+        if (validFromNeighbors.length > 0) {
+          const chosenNeighbor = validFromNeighbors[Math.floor(Math.random() * validFromNeighbors.length)];
+          const neighborTri = grid.triangles[chosenNeighbor];
+          foldEdgeIdx = findFoldEdge(tri, neighborTri);
+        } else if (parentIdx >= 0) {
+          // Fallback: use BFS parent (origin triangle or edge case)
           const parentTri = grid.triangles[parentIdx];
           foldEdgeIdx = findFoldEdge(tri, parentTri);
+        } else {
+          foldEdgeIdx = 0;
         }
       }
       startFold(
