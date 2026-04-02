@@ -109,27 +109,32 @@ export function findEdgeFoldEdge(
 
   if (!nearLeft && !nearRight && !nearTop && !nearBottom) return -1;
 
-  // Find which edge midpoint is closest to the nearest viewport boundary
-  const edges: [[number, number], [number, number]][] = [
-    [pts[0] as [number, number], pts[1] as [number, number]], // edge 0
-    [pts[1] as [number, number], pts[2] as [number, number]], // edge 1
-    [pts[2] as [number, number], pts[0] as [number, number]], // edge 2
-  ];
+  // Find which edge midpoint is closest to the nearest viewport boundary.
+  // Inline edge midpoint computation — avoids allocating an edges array per call.
+  const p0 = pts[0] as [number, number];
+  const p1 = pts[1] as [number, number];
+  const p2 = pts[2] as [number, number];
 
   let bestEdge = 0;
   let bestScore = Infinity;
 
-  for (let i = 0; i < 3; i++) {
-    const mx = (edges[i][0][0] + edges[i][1][0]) / 2;
-    const my = (edges[i][0][1] + edges[i][1][1]) / 2;
+  // Edge 0: p0–p1
+  let mx = (p0[0] + p1[0]) * 0.5;
+  let my = (p0[1] + p1[1]) * 0.5;
+  let score = Math.min(mx, canvasWidth - mx, my, canvasHeight - my);
+  if (score < bestScore) { bestScore = score; bestEdge = 0; }
 
-    // Score = distance to the closest viewport boundary
-    const score = Math.min(mx, canvasWidth - mx, my, canvasHeight - my);
-    if (score < bestScore) {
-      bestScore = score;
-      bestEdge = i;
-    }
-  }
+  // Edge 1: p1–p2
+  mx = (p1[0] + p2[0]) * 0.5;
+  my = (p1[1] + p2[1]) * 0.5;
+  score = Math.min(mx, canvasWidth - mx, my, canvasHeight - my);
+  if (score < bestScore) { bestScore = score; bestEdge = 1; }
+
+  // Edge 2: p2–p0
+  mx = (p2[0] + p0[0]) * 0.5;
+  my = (p2[1] + p0[1]) * 0.5;
+  score = Math.min(mx, canvasWidth - mx, my, canvasHeight - my);
+  if (score < bestScore) { bestScore = score; bestEdge = 2; }
 
   return bestEdge;
 }

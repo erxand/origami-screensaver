@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Frame Inspector — Origami Screensaver</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #111; color: #eee; font-family: monospace; display: flex; height: 100vh; }
+    #sidebar { width: 320px; flex-shrink: 0; background: #1a1a1a; border-right: 1px solid #333; overflow-y: auto; display: flex; flex-direction: column; }
+    #main { flex: 1; display: flex; flex-direction: column; }
+    #canvas-wrap { flex: 1; display: flex; align-items: center; justify-content: center; background: #000; position: relative; }
+    canvas { border: 1px solid #333; }
+    #controls { padding: 12px; background: #1a1a1a; border-top: 1px solid #333; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    button { padding: 6px 12px; background: #333; color: #eee; border: none; cursor: pointer; border-radius: 4px; font-family: monospace; font-size: 12px; }
+    button:hover { background: #444; }
+    button.active { background: #0066cc; }
+    #frame-list { flex: 1; overflow-y: auto; }
+    .frame-item { padding: 8px 12px; cursor: pointer; border-bottom: 1px solid #222; font-size: 11px; }
+    .frame-item:hover { background: #222; }
+    .frame-item.selected { background: #003366; }
+    .frame-item .frame-num { color: #aaa; }
+    .frame-item .frame-info { color: #7cf; margin-top: 2px; font-size: 10px; }
+    #info-panel { padding: 12px; border-top: 1px solid #333; font-size: 11px; line-height: 1.6; }
+    #info-panel h3 { color: #7cf; margin-bottom: 8px; font-size: 12px; }
+    .stat { display: flex; justify-content: space-between; }
+    .stat-val { color: #fc7; }
+    #record-btn.recording { background: #cc0000; animation: pulse 1s infinite; }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.6; } }
+    #tri-highlight { position: absolute; pointer-events: none; }
+    #zoom-view { width: 280px; height: 160px; background: #222; border-top: 1px solid #333; }
+    #zoom-label { padding: 4px 12px; font-size: 10px; color: #888; background: #1a1a1a; }
+    .color-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; vertical-align: middle; margin-right: 4px; }
+  </style>
+</head>
+<body>
+
+<div id="sidebar">
+  <div style="padding:12px; border-bottom:1px solid #333;">
+    <h2 style="font-size:13px; color:#7cf; margin-bottom:8px;">🔬 Frame Inspector</h2>
+    <div style="font-size:11px; color:#888; line-height:1.5;">
+      Records frames during a cascade. Step through frame-by-frame to inspect triangle state, colors, and animation progress.
+    </div>
+  </div>
+  <div id="zoom-label">Zoom (hover triangle)</div>
+  <canvas id="zoom-view" width="280" height="160"></canvas>
+  <div id="info-panel">
+    <h3>Frame Info</h3>
+    <div id="frame-stats">No frame selected</div>
+  </div>
+  <div id="frame-list"></div>
+</div>
+
+<div id="main">
+  <div id="canvas-wrap">
+    <canvas id="canvas"></canvas>
+    <canvas id="tri-highlight" style="position:absolute;top:0;left:0;pointer-events:none;"></canvas>
+  </div>
+  <div id="controls">
+    <button id="record-btn" onclick="toggleRecord()">⏺ Record cascade</button>
+    <button onclick="stepBack()">◀ Prev</button>
+    <span id="frame-counter" style="font-size:12px; color:#aaa;">Frame 0 / 0</span>
+    <button onclick="stepForward()">▶ Next</button>
+    <button onclick="playPause()" id="play-btn">▶ Play</button>
+    <span style="font-size:11px; color:#666;">|</span>
+    <label style="font-size:11px; color:#aaa;">Speed: <input type="range" id="play-speed" min="1" max="20" value="6" style="width:80px; vertical-align:middle;"></label>
+    <span style="font-size:11px; color:#666;">|</span>
+    <button onclick="exportFrames()">💾 Export JSON</button>
+    <label style="font-size:11px; color:#aaa; margin-left:auto;">
+      <input type="checkbox" id="show-indices"> Show triangle indices
+    </label>
+  </div>
+</div>
+
+<script type="module">
+import { createScreensaver } from './screensaver.js';
+import { parseConfig } from './config.js';
+
+const canvas = document.getElementById('canvas');
+const hlCanvas = document.getElementById('tri-highlight');
+const zoomCanvas = document.getElementById('zoom-view');
+const zoomCtx = zoomCanvas.getContext('2d');
+
+// Size canvas to fit a 3-triangle test (small canvas, easy to inspect)
+const W = 420, H = 300;
+canvas.width = W; canvas.height = H;
+hlCanvas.width = W; hlCanvas.height = H;
+hlCanvas.style.width = W + 'px'; hlCanvas.style.height = H + 'px';
+
+// Init screensaver with small triangles, slow speed, 1 cascade
+const config = parseConfig('?size=120&speed=0.3&wait=800&cascades=1&palette=sakura');
+const ss = createScreensaver(canvas, {
+  paletteIdx: config.paletteIdx,
+  foldDuration: Math.round(400 / 0.3),
+  side: 120,
+  density: config.density,
+  maxConcurrent: 1,
+  waitTime: 800,
+});
+ss.start();
+
+// ── Recording ────────────────────────────────────────────────────────────────
+
+let frames = [];
+let recording = false;
+let recordStartFrame = null;
+let currentFrameIdx = 0;
+let playing = false;
+let playInterval = null;
+
+// Hook into the screensaver to capture state
+// We intercept by reading the canvas pixel data each rAF
+let frameCount = 0;
+const origRAF = window.requestAnimationFrame.bind(window);
+window.requestAnimationFrame = function(cb) {
+  return origRAF(function(ts) {
+    cb(ts);
+    if (recording) captureFrame(ts);
+  });
+};
+
+function captureFrame(ts) {
+  // Read canvas pixels
+  const ctx = canvas.getContext('2d');
+  const imageData = ctx.getImageData(0, 0, W, H);
+  
+  // Expose screensaver state via global (we'll add this)
+  const state = window.__ssState || {};
+  
+  frames.push({
+    frameNum: frameCount++,
+    ts: ts,
+    imageData: imageData,
+    // Snapshot animating triangles
+    animating: state.animating ? [...state.animating] : [],
+    colors: state.colors ? [...state.colors] : [],
+    foldingCount: state.foldingCount || 0,
+  });
+  
+  updateFrameList();
+  
+  // Stop after 300 frames max (~5s)
+  if (frames.length >= 300) stopRecord();
+}
+
+function toggleRecord() {
+  if (recording) stopRecord();
+  else startRecord();
+}
+
+function startRecord() {
+  frames = [];
+  frameCount = 0;
+  recording = true;
+  document.getElementById('record-btn').classList.add('recording');
+  document.getElementById('record-btn').textContent = '⏹ Stop recording';
+}
+
+function stopRecord() {
+  recording = false;
+  document.getElementById('record-btn').classList.remove('recording');
+  document.getElementById('record-btn').textContent = '⏺ Record cascade';
+  if (frames.length > 0) {
+    selectFrame(0);
+  }
+}
+
+// ── Playback ──────────────────────────────────────────────────────────────────
+
+function selectFrame(idx) {
+  if (idx < 0 || idx >= frames.length) return;
+  currentFrameIdx = idx;
+  
+  const frame = frames[idx];
+  
+  // Draw the frame
+  const ctx = canvas.getContext('2d');
+  ctx.putImageData(frame.imageData, 0, 0);
+  
+  // Update frame counter
+  document.getElementById('frame-counter').textContent = 
+    `Frame ${idx + 1} / ${frames.length}`;
+  
+  // Update stats
+  const elapsed = idx > 0 ? (frame.ts - frames[0].ts).toFixed(0) : 0;
+  document.getElementById('frame-stats').innerHTML = `
+    <div class="stat"><span>Frame</span><span class="stat-val">${idx + 1} / ${frames.length}</span></div>
+    <div class="stat"><span>Time</span><span class="stat-val">+${elapsed}ms</span></div>
+    <div class="stat"><span>Folding triangles</span><span class="stat-val">${frame.foldingCount}</span></div>
+    <div class="stat"><span>Unique colors</span><span class="stat-val">${new Set(frame.colors).size}</span></div>
+    ${frame.animating.slice(0,5).map(a => 
+      `<div class="stat" style="font-size:10px;">
+        <span>tri ${a.idx}</span>
+        <span class="stat-val">${(a.progress*100).toFixed(0)}% <span class="color-dot" style="background:${a.newColor}"></span>${a.newColor?.slice(0,7)}</span>
+      </div>`
+    ).join('')}
+  `;
+  
+  // Highlight selected frame in list
+  document.querySelectorAll('.frame-item').forEach((el, i) => {
+    el.classList.toggle('selected', i === idx);
+    if (i === idx) el.scrollIntoView({ block: 'nearest' });
+  });
+
+  // Draw triangle index overlay if enabled
+  drawOverlay(frame);
+}
+
+function drawOverlay(frame) {
+  const hlCtx = hlCanvas.getContext('2d');
+  hlCtx.clearRect(0, 0, W, H);
+  
+  if (!document.getElementById('show-indices').checked) return;
+  
+  hlCtx.font = '9px monospace';
+  hlCtx.textAlign = 'center';
+  hlCtx.textBaseline = 'middle';
+  
+  frame.animating.forEach(a => {
+    hlCtx.fillStyle = 'rgba(255,255,0,0.9)';
+    hlCtx.fillText(a.idx, a.cx || 0, a.cy || 0);
+  });
+}
+
+window.stepForward = () => selectFrame(currentFrameIdx + 1);
+window.stepBack = () => selectFrame(currentFrameIdx - 1);
+
+window.playPause = function() {
+  playing = !playing;
+  document.getElementById('play-btn').textContent = playing ? '⏸ Pause' : '▶ Play';
+  if (playing) {
+    const speed = parseInt(document.getElementById('play-speed').value);
+    const interval = Math.max(16, Math.round(1000 / speed));
+    playInterval = setInterval(() => {
+      if (currentFrameIdx >= frames.length - 1) {
+        playing = false;
+        clearInterval(playInterval);
+        document.getElementById('play-btn').textContent = '▶ Play';
+      } else {
+        selectFrame(currentFrameIdx + 1);
+      }
+    }, interval);
+  } else {
+    clearInterval(playInterval);
+  }
+};
+
+// ── Frame list ──────────────────────────────────────────────────────────────────
+
+function updateFrameList() {
+  const list = document.getElementById('frame-list');
+  list.innerHTML = frames.map((f, i) => `
+    <div class="frame-item ${i === currentFrameIdx ? 'selected' : ''}" onclick="selectFrame(${i})">
+      <span class="frame-num">#${i + 1}</span>
+      <div class="frame-info">+${i > 0 ? (f.ts - frames[0].ts).toFixed(0) : 0}ms | ${f.foldingCount} folding</div>
+    </div>
+  `).join('');
+}
+
+window.selectFrame = selectFrame;
+
+// ── Zoom on hover ──────────────────────────────────────────────────────────────
+
+canvas.addEventListener('mousemove', (e) => {
+  if (frames.length === 0 || currentFrameIdx < 0) return;
+  const frame = frames[currentFrameIdx];
+  const rect = canvas.getBoundingClientRect();
+  const mx = (e.clientX - rect.left) * (W / rect.width);
+  const my = (e.clientY - rect.top) * (H / rect.height);
+  
+  const ZOOM = 4;
+  const zw = zoomCanvas.width / ZOOM;
+  const zh = zoomCanvas.height / ZOOM;
+  zoomCtx.clearRect(0, 0, zoomCanvas.width, zoomCanvas.height);
+  zoomCtx.imageSmoothingEnabled = false;
+  
+  const src = frame.imageData;
+  const tmpCanvas = document.createElement('canvas');
+  tmpCanvas.width = W; tmpCanvas.height = H;
+  tmpCanvas.getContext('2d').putImageData(src, 0, 0);
+  
+  const sx = Math.max(0, Math.min(W - zw, mx - zw/2));
+  const sy = Math.max(0, Math.min(H - zh, my - zh/2));
+  zoomCtx.drawImage(tmpCanvas, sx, sy, zw, zh, 0, 0, zoomCanvas.width, zoomCanvas.height);
+  
+  // Draw crosshair
+  zoomCtx.strokeStyle = 'rgba(255,255,0,0.7)';
+  zoomCtx.lineWidth = 1;
+  zoomCtx.beginPath();
+  zoomCtx.moveTo(zoomCanvas.width/2, 0);
+  zoomCtx.lineTo(zoomCanvas.width/2, zoomCanvas.height);
+  zoomCtx.moveTo(0, zoomCanvas.height/2);
+  zoomCtx.lineTo(zoomCanvas.width, zoomCanvas.height/2);
+  zoomCtx.stroke();
+});
+
+// ── Keyboard shortcuts ────────────────────────────────────────────────────────
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowRight' || e.key === '.') stepForward();
+  if (e.key === 'ArrowLeft' || e.key === ',') stepBack();
+  if (e.key === ' ') { e.preventDefault(); playPause(); }
+  if (e.key === 'r') toggleRecord();
+});
+
+document.getElementById('show-indices').addEventListener('change', () => {
+  if (frames.length > 0) selectFrame(currentFrameIdx);
+});
+
+// Expose state capture hook — screensaver.ts should set window.__ssState each tick
+// For now we'll just capture pixel data
+console.log('Frame inspector ready. Press R to record, use arrow keys to step frames.');
+</script>
+</body>
+</html>

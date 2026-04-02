@@ -277,7 +277,8 @@ export function createScreensaver(canvas: HTMLCanvasElement, options: Screensave
             // draw pass (condition: progress <= 0). The static blit is the fallback,
             // so if we don't patch it here, the cache still shows the pre-fold-1 color
             // for 1-2 frames — exactly the "left-edge triangle reverts" bug.
-            renderer.patchStaticTriangle(grid.triangles[i], completedNewColor, i);
+            // Use enqueuePatch so all completions this tick flush together in one batched draw.
+            renderer.enqueuePatch(grid.triangles[i], completedNewColor, i);
 
             startFold(anim, now, pendingColor, completedNewColor, foldEdgeIdx, foldDuration);
             renderer.cacheFoldGeom(i, foldEdgeIdx);
@@ -292,8 +293,8 @@ export function createScreensaver(canvas: HTMLCanvasElement, options: Screensave
             ra.foldEdgeIdx = anim.foldEdgeIdx;
           } else {
             resetAnim(anim);
-            // Patch just this one triangle in the static cache (O(1) vs O(N) rebuild)
-            renderer.patchStaticTriangle(grid.triangles[i], colors[i], i);
+            // Enqueue patch — all completions this tick flush together in flushPatches()
+            renderer.enqueuePatch(grid.triangles[i], colors[i], i);
             _completedBuf[_completedLen++] = i;
             renderAnims[i] = null; // fold done — clear render state inline
             dirty = true;
@@ -342,6 +343,10 @@ export function createScreensaver(canvas: HTMLCanvasElement, options: Screensave
         (window as any).__ssDebug.maxFoldingSet = foldingSet.size;
       }
     }
+
+    // Flush batched static-cache patches (all completions this tick → 1 compound draw per color).
+    // Must happen before renderFrame so the updated static canvas is blitted correctly.
+    renderer.flushPatches();
 
     // Render only when dirty (renderAnims is already up-to-date from the fused loop above)
     if (dirty || paletteOverlayTimer > 0) {

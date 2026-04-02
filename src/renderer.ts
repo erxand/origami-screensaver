@@ -28,6 +28,36 @@ function darkenString(t: number): string {
 }
 
 // ---------------------------------------------------------------------------
+// Pre-blended darkened color cache
+// Eliminates the second ctx.fill() on folding flaps by pre-computing the
+// blended result of (baseColor + rgba(0,0,0,opacity)) for each darken step.
+// Cache: Map<baseHex, string[DARKEN_STEPS]>  (~12 varied colors × 32 steps = ~384 entries)
+// ---------------------------------------------------------------------------
+const _darkenedCache = new Map<string, string[]>();
+
+/** Return a hex color that is baseHex blended with black at darken parameter t (0..1). */
+function darkenedHex(baseHex: string, t: number): string {
+  const stepIdx = Math.min(DARKEN_STEPS - 1, Math.max(0, Math.round(t * (DARKEN_STEPS - 1))));
+  if (stepIdx === 0) return baseHex; // no darkening
+  let steps = _darkenedCache.get(baseHex);
+  if (!steps) {
+    steps = new Array(DARKEN_STEPS);
+    steps[0] = baseHex;
+    _darkenedCache.set(baseHex, steps);
+  }
+  let cached = steps[stepIdx];
+  if (cached === undefined) {
+    const [r, g, b] = hexToRgb(baseHex);
+    // Blend with black at opacity = stepIdx/(DARKEN_STEPS-1) * 0.3
+    const opacity = (stepIdx / (DARKEN_STEPS - 1)) * 0.3;
+    const inv = 1 - opacity;
+    cached = rgbToHex(r * inv, g * inv, b * inv);
+    steps[stepIdx] = cached;
+  }
+  return cached;
+}
+
+// ---------------------------------------------------------------------------
 // Color utilities
 // ---------------------------------------------------------------------------
 
@@ -239,6 +269,8 @@ export function createRenderer(ctx: CanvasRenderingContext2D, triCoords?: Float3
    * Incrementally update one triangle in the static cache.
    * Called when a single triangle finishes folding — avoids O(N) full rebuild.
    * If the static cache isn't ready, falls back to a full invalidation.
+   *
+   * For batching multiple completions in one tick, use enqueuePatch + flushPatches.
    */
   function patchStaticTriangle(triangle: Triangle, color: string, index: number): void {
     if (!staticCtx || staticDirty) {
@@ -275,6 +307,82 @@ export function createRenderer(ctx: CanvasRenderingContext2D, triCoords?: Float3
     sc.strokeStyle = creaseColor(variedColor);
     sc.lineWidth = 0.7;
     sc.stroke();
+  }
+
+  // ── Batched patch buffers ─────────────────────────────────────────────────
+  // Accumulate (index, color) pairs within one tick, then flush as a single
+  // compound path-per-color draw in flushPatches().  This collapses the
+  // per-triangle beginPath+fill+stroke into 2×(unique varied colors) calls —
+  // typically ~2-4 calls vs 7× per-triangle when many folds complete together.
+  const _patchIndices: number[] = [];
+  const _patchColors: string[]  = [];
+  // Reusable scratch map for flushPatches — avoids per-tick Map allocation during cascades.
+  const _patchBuckets = new Map<string, number[]>();
+
+  /**
+   * Queue a triangle to be patched into the static cache.
+   * Must call flushPatches() before the next renderFrame to apply.
+   */
+  function enqueuePatch(triangle: Triangle, color: string, index: number): void {
+    if (!staticCtx || staticDirty) {
+      staticDirty = true;
+      return;
+    }
+    void triangle; // will read from triCoords in flushPatches
+    _patchIndices.push(index);
+    _patchColors.push(color);
+  }
+
+  /**
+   * Flush all queued patches in a single batched draw pass.
+   * Groups triangles by their varied color and emits one compound fill+stroke
+   * per color bucket — same strategy as rebuildStaticCache (2×unique-color calls
+   * instead of 7×N individual canvas ops).
+   *
+   * No-op if queue is empty or static cache is dirty (rebuild scheduled anyway).
+   */
+  function flushPatches(): void {
+    if (_patchIndices.length === 0) return;
+    if (!staticCtx || staticDirty) {
+      _patchIndices.length = 0;
+      _patchColors.length  = 0;
+      return;
+    }
+    const sc = staticCtx;
+    // Build color → index[] map (reuse module-level scratch map to avoid per-tick allocation).
+    // Instead of .clear() (which drops bucket arrays for GC), truncate existing arrays in-place.
+    for (const bucket of _patchBuckets.values()) bucket.length = 0;
+    for (let k = 0; k < _patchIndices.length; k++) {
+      const idx = _patchIndices[k];
+      const variedColor = applyTriVariation(_patchColors[k], idx);
+      let b = _patchBuckets.get(variedColor);
+      if (!b) { b = []; _patchBuckets.set(variedColor, b); }
+      b.push(idx);
+    }
+    sc.lineWidth = 0.7;
+    if (triCoords) {
+      for (const [variedColor, idxList] of _patchBuckets) {
+        if (idxList.length === 0) continue;
+        sc.beginPath();
+        for (const idx of idxList) {
+          const base = idx * COORDS_STRIDE;
+          sc.moveTo(triCoords[base],     triCoords[base + 1]);
+          sc.lineTo(triCoords[base + 2], triCoords[base + 3]);
+          sc.lineTo(triCoords[base + 4], triCoords[base + 5]);
+          sc.closePath();
+        }
+        sc.fillStyle = variedColor;
+        sc.fill();
+        sc.strokeStyle = creaseColor(variedColor);
+        sc.stroke();
+      }
+    } else {
+      // Fallback for test environments without triCoords
+      // (we don't have the Triangle objects here; fall back to invalidate)
+      staticDirty = true;
+    }
+    _patchIndices.length = 0;
+    _patchColors.length  = 0;
   }
 
   /**
@@ -460,9 +568,9 @@ export function createRenderer(ctx: CanvasRenderingContext2D, triCoords?: Float3
    */
   function applyDepthShading(fillColor: string): void {
     // Crease stroke: color-relative (18% darker than fill) → near-invisible within same-color regions.
+    // Note: lineWidth is set once per frame in renderFrame (0.7) to avoid redundant per-triangle sets.
     const stroke = fillColor ? creaseColor(fillColor) : 'rgba(0,0,0,0.09)';
     ctx.strokeStyle = stroke;
-    ctx.lineWidth = 0.7;
     ctx.stroke();
   }
 
@@ -492,8 +600,21 @@ export function createRenderer(ctx: CanvasRenderingContext2D, triCoords?: Float3
     /**
      * Incrementally update a single triangle in the static cache after fold completion.
      * O(1) per triangle vs O(N) full rebuild — keeps the cache warm during cascades.
+     * For multiple completions in one tick, prefer enqueuePatch + flushPatches instead.
      */
     patchStaticTriangle,
+
+    /**
+     * Queue a triangle for batched patching. Call flushPatches() after all completions
+     * in a tick to write them in a single compound-path draw (2×unique-color ops vs 7×N).
+     */
+    enqueuePatch,
+
+    /**
+     * Flush all queued patches in one batched compound-path draw pass.
+     * Must be called before the next renderFrame to keep the static cache consistent.
+     */
+    flushPatches,
 
     /**
      * Precompute fold projection geometry for triangle `index` at fold start.
@@ -614,16 +735,14 @@ export function createRenderer(ctx: CanvasRenderingContext2D, triCoords?: Float3
         ctx.fill();
         applyDepthShading(variedNew);
 
-        // Draw the folding flap
+        // Draw the folding flap — single pre-blended fill (eliminates 1 ctx.fill per flap per frame)
         if (scale > 0.005) {
           ctx.beginPath();
           ctx.moveTo(ex0, ey0);
           ctx.lineTo(ex1, ey1);
           ctx.lineTo(foldedApexX, foldedApexY);
           ctx.closePath();
-          ctx.fillStyle = variedOld;
-          ctx.fill();
-          ctx.fillStyle = darkenString(phase * 0.85);
+          ctx.fillStyle = darkenedHex(variedOld, phase * 0.85);
           ctx.fill();
           applyDepthShading(variedOld);
         }
@@ -639,16 +758,14 @@ export function createRenderer(ctx: CanvasRenderingContext2D, triCoords?: Float3
         ctx.fill();
         applyDepthShading(variedNew);
 
-        // Draw the folding flap coming down
+        // Draw the folding flap coming down — single pre-blended fill
         if (overshootPhase < 1.0) {
           ctx.beginPath();
           ctx.moveTo(ex0, ey0);
           ctx.lineTo(ex1, ey1);
           ctx.lineTo(foldedApexX, foldedApexY);
           ctx.closePath();
-          ctx.fillStyle = variedNew;
-          ctx.fill();
-          ctx.fillStyle = darkenString((1 - overshootPhase) * 0.5);
+          ctx.fillStyle = darkenedHex(variedNew, (1 - overshootPhase) * 0.5);
           ctx.fill();
           applyDepthShading(variedNew);
         }
@@ -714,6 +831,9 @@ export function createRenderer(ctx: CanvasRenderingContext2D, triCoords?: Float3
         ctx.clip();
         ctx.drawImage(staticCanvas, 0, 0);
 
+        // Set lineWidth once per frame — applyDepthShading skips redundant per-triangle sets
+        ctx.lineWidth = 0.7;
+
         // Draw only animating triangles on top — O(K) when foldingIndices provided
         if (hasAnim && animStates) {
           if (foldingIndices) {
@@ -771,6 +891,7 @@ export function createRenderer(ctx: CanvasRenderingContext2D, triCoords?: Float3
         ctx.beginPath();
         ctx.rect(0, 0, w, h);
         ctx.clip();
+        ctx.lineWidth = 0.7;
         if (triCoords) {
           // Fast path: read coords directly from typed buffer — no per-triangle array allocation
           for (let i = 0; i < triangles.length; i++) {
