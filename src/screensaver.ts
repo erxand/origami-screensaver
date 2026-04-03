@@ -84,6 +84,9 @@ export function createScreensaver(canvas: HTMLCanvasElement, options: Screensave
   let _completedBuf = new Int32Array(256); // grows if needed
   let _completedLen = 0;
 
+  // Reusable scratch buffer for startCascade — avoids allocating new Uint8Array(N) per cascade.
+  let _inCascadeBuf = new Uint8Array(0);
+
   function trackFPS(now: number): void {
     // Circular buffer — no push/shift allocations (2.2× faster than Array.push+shift)
     const oldest = fpsBuf[fpsBufHead]; // will be overwritten
@@ -140,7 +143,13 @@ export function createScreensaver(canvas: HTMLCanvasElement, options: Screensave
 
     // Track which triangles are part of this cascade so we can find all
     // valid "fold from" neighbors (not just the BFS parent).
-    const inCascade = new Uint8Array(grid.triangles.length);
+    // Reuse module-level scratch buffer — avoids new Uint8Array(N) per cascade.
+    const triCount = grid.triangles.length;
+    if (_inCascadeBuf.length < triCount) {
+      _inCascadeBuf = new Uint8Array(triCount);
+    } else {
+      _inCascadeBuf.fill(0, 0, triCount);
+    }
 
     for (let fi = 0; fi < flat.length; fi++) {
       const idx       = flat.indices[fi];
@@ -148,7 +157,7 @@ export function createScreensaver(canvas: HTMLCanvasElement, options: Screensave
       const startTime = flat.startTimes[fi];
       const anim = animStates[idx];
 
-      inCascade[idx] = 1;
+      _inCascadeBuf[idx] = 1;
 
       if (anim.state === State.FOLDING) {
         anim.pendingColor = newColor;
@@ -160,19 +169,25 @@ export function createScreensaver(canvas: HTMLCanvasElement, options: Screensave
 
       let foldEdgeIdx = findEdgeFoldEdge(tri, cw, ch);
       if (foldEdgeIdx === -1) {
-        // Find all neighbors already in this cascade — any of them is a valid
-        // "fold from" direction. Randomly pick one so folds in a row don't all
-        // come from the same direction, breaking the mechanical look.
+        // Find a random neighbor already in this cascade — any of them is a valid
+        // "fold from" direction. Count valid neighbors first, then pick one randomly.
+        // Avoids allocating a temporary array per triangle.
         const neighbors = adjacency[idx];
-        const validFromNeighbors: number[] = [];
+        let validCount = 0;
         for (let ni = 0; ni < neighbors.length; ni++) {
-          if (inCascade[neighbors[ni]]) {
-            validFromNeighbors.push(neighbors[ni]);
-          }
+          if (_inCascadeBuf[neighbors[ni]]) validCount++;
         }
-        if (validFromNeighbors.length > 0) {
-          const chosenNeighbor = validFromNeighbors[Math.floor(Math.random() * validFromNeighbors.length)];
-          const neighborTri = grid.triangles[chosenNeighbor];
+        if (validCount > 0) {
+          // Pick a random index among valid neighbors (Reservoir sampling in one pass)
+          let chosen = -1;
+          let pick = Math.floor(Math.random() * validCount);
+          for (let ni = 0; ni < neighbors.length; ni++) {
+            if (_inCascadeBuf[neighbors[ni]]) {
+              if (pick === 0) { chosen = neighbors[ni]; break; }
+              pick--;
+            }
+          }
+          const neighborTri = grid.triangles[chosen];
           foldEdgeIdx = findFoldEdge(tri, neighborTri);
         } else if (parentIdx >= 0) {
           // Fallback: use BFS parent (origin triangle or edge case)
