@@ -139,9 +139,6 @@ export function createScreensaver(canvas: HTMLCanvasElement, options: Screensave
     const effectiveDelay = foldDuration * 0.95;
     const flat = buildCascadeScheduleFlat(originIdx, adjacency, effectiveDelay);
 
-    const cw = canvas.clientWidth;
-    const ch = canvas.clientHeight;
-
     // Track which triangles are part of this cascade so we can find all
     // valid "fold from" neighbors (not just the BFS parent).
     // Reuse module-level scratch buffer — avoids new Uint8Array(N) per cascade.
@@ -168,38 +165,31 @@ export function createScreensaver(canvas: HTMLCanvasElement, options: Screensave
 
       const tri = grid.triangles[idx];
 
-      // Disabled findEdgeFoldEdge — it picks edges facing the viewport boundary,
-      // which causes the new-color flap to fold off-screen (invisible), leaving
-      // edge triangles showing old color until the fold completes.
-      let foldEdgeIdx = -1;
-      if (foldEdgeIdx === -1) {
-        // Find a random neighbor already in this cascade — any of them is a valid
-        // "fold from" direction. Count valid neighbors first, then pick one randomly.
-        // Avoids allocating a temporary array per triangle.
-        const neighbors = adjacency[idx];
-        let validCount = 0;
+      // Find a random neighbor already in this cascade — any of them is a valid
+      // "fold from" direction. Count valid neighbors first, then pick one randomly.
+      // Avoids allocating a temporary array per triangle.
+      let foldEdgeIdx = 0;
+      const neighbors = adjacency[idx];
+      let validCount = 0;
+      for (let ni = 0; ni < neighbors.length; ni++) {
+        if (_inCascadeBuf[neighbors[ni]]) validCount++;
+      }
+      if (validCount > 0) {
+        // Pick a random index among valid neighbors
+        let chosen = -1;
+        let pick = Math.floor(Math.random() * validCount);
         for (let ni = 0; ni < neighbors.length; ni++) {
-          if (_inCascadeBuf[neighbors[ni]]) validCount++;
-        }
-        if (validCount > 0) {
-          // Pick a random index among valid neighbors (Reservoir sampling in one pass)
-          let chosen = -1;
-          let pick = Math.floor(Math.random() * validCount);
-          for (let ni = 0; ni < neighbors.length; ni++) {
-            if (_inCascadeBuf[neighbors[ni]]) {
-              if (pick === 0) { chosen = neighbors[ni]; break; }
-              pick--;
-            }
+          if (_inCascadeBuf[neighbors[ni]]) {
+            if (pick === 0) { chosen = neighbors[ni]; break; }
+            pick--;
           }
-          const neighborTri = grid.triangles[chosen];
-          foldEdgeIdx = findFoldEdge(tri, neighborTri);
-        } else if (parentIdx >= 0) {
-          // Fallback: use BFS parent (origin triangle or edge case)
-          const parentTri = grid.triangles[parentIdx];
-          foldEdgeIdx = findFoldEdge(tri, parentTri);
-        } else {
-          foldEdgeIdx = 0;
         }
+        const neighborTri = grid.triangles[chosen];
+        foldEdgeIdx = findFoldEdge(tri, neighborTri);
+      } else if (parentIdx >= 0) {
+        // Fallback: use BFS parent (origin triangle or edge case)
+        const parentTri = grid.triangles[parentIdx];
+        foldEdgeIdx = findFoldEdge(tri, parentTri);
       }
       startFold(
         anim,
