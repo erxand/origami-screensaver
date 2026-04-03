@@ -271,11 +271,13 @@ export function createControls(screensaver: ScreensaverInstance, opts: ControlsO
   const sizeVal    = panel.querySelector('#oc-size-val') as HTMLElement;
   // Set initial label correctly (0 = Auto)
   sizeVal.textContent = initSize === 0 ? 'Auto' : initSize + 'px';
-  sizeSlider.addEventListener('input', () => {
+  function updateSizeLabel(): void {
     const v = parseInt(sizeSlider.value, 10);
     sizeVal.textContent = v === 0 ? 'Auto' : v + 'px';
-  });
+  }
+  sizeSlider.addEventListener('input', updateSizeLabel);
   sizeSlider.addEventListener('change', () => {
+    updateSizeLabel(); // keep label in sync if only 'change' fires (keyboard arrows, programmatic)
     const v = parseInt(sizeSlider.value, 10);
     screensaver.setParam('side', v);
   });
