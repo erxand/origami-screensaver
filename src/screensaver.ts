@@ -10,7 +10,7 @@ import { buildCascadeScheduleFlat } from './cascade.js';
 import type { AnimState, RenderAnimState, GridResult, Triangle, ScreensaverOptions } from './types.js';
 
 const WAIT_BETWEEN_CASCADES = 8_000;
-const FOLD_DURATION = 400;
+const FOLD_DURATION = 200;
 const CASCADE_DELAY = 60; // default, overridden at cascade start to match fold duration
 const MAX_CONCURRENT_CASCADES = 2;
 
