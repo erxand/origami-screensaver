@@ -261,11 +261,11 @@ export function createScreensaver(canvas: HTMLCanvasElement, options: Screensave
       }
     }
 
-    // Start new cascade if under limit and wait has elapsed
-    if (activeCascades.length < maxConcurrent && now >= waitingUntil) {
+    // Start new cascade only when all previous folds are complete.
+    // This ensures at most 2 colors on screen at any time (old + new).
+    if (activeCascades.length === 0 && foldingSet.size === 0 && now >= waitingUntil) {
       startCascade(now);
-      const nextWait = activeCascades.length >= maxConcurrent ? waitTime * 0.5 : waitTime;
-      waitingUntil = now + nextWait;
+      waitingUntil = now + waitTime;
     }
 
     // Update animating triangles AND populate renderAnims in one fused pass — O(K) via foldingSet.

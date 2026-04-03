@@ -157,8 +157,10 @@ export function createSim(options: SimOptions = {}) {
     // Prune finished cascades
     activeCascades = activeCascades.filter(c => now < c.endTime);
 
-    // Trigger new cascades
-    if (activeCascades.length < maxConcurrent && now >= waitingUntil) {
+    // Trigger new cascade only when all previous folds are complete.
+    // This ensures at most 2 colors on screen at any time (old + new).
+    const anyFolding = animStates.some(a => a.state === State.FOLDING);
+    if (activeCascades.length === 0 && !anyFolding && now >= waitingUntil) {
       startCascade(now);
       waitingUntil = now + waitTime;
     }
