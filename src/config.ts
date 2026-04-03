@@ -37,7 +37,7 @@ export function parseConfig(search?: string | URLSearchParams): ParsedConfig {
   }
 
   // --- speed (multiplier; higher = faster folds) ---
-  const BASE_FOLD_MS = 200; // default fold duration in ms
+  const BASE_FOLD_MS = 400; // default fold duration in ms
   let foldDuration = BASE_FOLD_MS;
   const speedParam = params.get('speed');
   if (speedParam !== null) {
@@ -100,8 +100,8 @@ export function buildConfigUrl(config: ParsedConfig): string {
   if (config.paletteIdx != null && config.paletteIdx !== 0) {
     params.set('palette', PALETTE_NAMES[config.paletteIdx]);
   }
-  if (config.foldDuration != null && config.foldDuration !== 200) {
-    const speed = +(200 / config.foldDuration).toFixed(2);
+  if (config.foldDuration != null && config.foldDuration !== 400) {
+    const speed = +(400 / config.foldDuration).toFixed(2);
     params.set('speed', String(speed));
   }
   if (config.side != null && config.side !== 0) {
