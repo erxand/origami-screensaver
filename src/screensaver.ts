@@ -12,7 +12,8 @@ import type { AnimState, RenderAnimState, GridResult, Triangle, ScreensaverOptio
 const WAIT_BETWEEN_CASCADES = 8_000;
 const FOLD_DURATION = 400;
 const CASCADE_DELAY = 60; // default, overridden at cascade start to match fold duration
-const MAX_CONCURRENT_CASCADES = 2;
+/** Single cascade at a time — maxConcurrent is accepted but has no effect (see README Roadmap). */
+const MAX_CONCURRENT_CASCADES = 1;
 
 /**
  * Compute responsive triangle side length based on viewport.
@@ -415,18 +416,36 @@ export function createScreensaver(canvas: HTMLCanvasElement, options: Screensave
    * use the right color.
    */
   function redirectActiveCascade(newColor: string): void {
+    const oldColor = currentColor;
+    // Redirect all in-progress folds to the new color
     for (const i of foldingSet) {
       const anim = animStates[i];
       if (anim.state !== State.FOLDING) continue;
       anim.newColor = newColor;
       anim.pendingColor = null; // stale pending from previous redirect (if any) must be cleared
     }
+    // Fix already-committed triangles from the current cascade — they completed
+    // their fold before the palette switch and have colors[i] set to the old
+    // cascade color. Without this, the screen shows a mix of old-palette and
+    // new-palette colors after the cascade finishes (3-color artifact).
+    for (let i = 0; i < colors.length; i++) {
+      if (colors[i] === oldColor && !foldingSet.has(i)) {
+        // Skip — this triangle hasn't been touched by the cascade yet (still old color).
+        // We only want to redirect triangles that were part of the current cascade.
+        // Actually: ALL idle triangles showing oldColor should switch, because the
+        // cascade is transitioning the entire screen. Any triangle not currently folding
+        // but showing oldColor is either (a) already completed or (b) not yet reached.
+        // Both should display newColor once the cascade finishes.
+        colors[i] = newColor;
+      }
+    }
     // Update cascade tracking so prune logic and maxScheduleStart stay consistent
     for (const cascade of activeCascades) {
       (cascade as ActiveCascade & { newColor: string }).newColor = newColor;
     }
     currentColor = newColor;
-    // Static cache will be rebuilt when folds complete (active→idle transition)
+    // Full static cache rebuild needed — many triangles just changed color
+    renderer.invalidateStaticCache();
     dirty = true;
   }
 

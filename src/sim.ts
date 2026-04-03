@@ -9,7 +9,7 @@ import { buildCascadeSchedule } from './cascade.js';
 import { createPaletteCycler } from './palette.js';
 import type { AnimState, CascadeEntry, GridResult } from './types.js';
 
-const DEFAULT_FOLD_DURATION = 600;
+const DEFAULT_FOLD_DURATION = 400;
 const DEFAULT_WAIT_TIME = 8_000;
 const DEFAULT_SIDE = 60;
 const DEFAULT_MAX_CONCURRENT = 2;
