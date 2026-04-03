@@ -481,13 +481,9 @@ export function createRenderer(ctx: CanvasRenderingContext2D, triCoords?: Float3
       (window as any).__ssDebug2.rebuildColors = Array.from(uniqueColors);
     }
 
-    // Fill background
-    if (bgColor) {
-      sc.fillStyle = bgColor;
-      sc.fillRect(0, 0, w, h);
-    } else {
-      sc.clearRect(0, 0, w, h);
-    }
+    // Fill background — always black so edge gaps don't bleed a stale color
+    sc.fillStyle = '#000000';
+    sc.fillRect(0, 0, w, h);
 
     sc.save();
     sc.beginPath();
@@ -879,7 +875,7 @@ export function createRenderer(ctx: CanvasRenderingContext2D, triCoords?: Float3
         ctx.restore();
       } else {
         // --- Fallback: full redraw (test environment, no DOM) ---
-        this.clear(bgColor);
+        this.clear('#000000');
         ctx.save();
         ctx.beginPath();
         ctx.rect(0, 0, w, h);
