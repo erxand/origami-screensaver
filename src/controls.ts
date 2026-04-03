@@ -307,9 +307,15 @@ export function createControls(screensaver: ScreensaverInstance, opts: ControlsO
     updatePaletteButtons(idx);
   }
 
+  // Keep speed slider in sync when +/- keys change speed externally
+  function syncSpeed(speed: number): void {
+    speedSlider.value = String(speed);
+    speedVal.textContent = speed + '×';
+  }
+
   function destroy(): void {
     if (panel.parentNode) panel.parentNode.removeChild(panel);
   }
 
-  return { toggle, setFPS, syncPaletteIdx, destroy, isVisible: () => visible };
+  return { toggle, setFPS, syncPaletteIdx, syncSpeed, destroy, isVisible: () => visible };
 }

@@ -339,6 +339,14 @@ export function createRenderer(ctx: CanvasRenderingContext2D, triCoords?: Float3
   // Reusable scratch map for flushPatches — avoids per-tick Map allocation during cascades.
   const _patchBuckets = new Map<string, number[]>();
 
+  // ── Batched animating base-draw buffers ──────────────────────────────────
+  // During renderFrame, collect all animating triangles' base (old-color) paths
+  // into compound paths grouped by variedOldColor. Reduces K individual
+  // beginPath+fill+stroke calls to ~2 compound paths (typically 2 colors:
+  // old cascade color and chained-fold intermediate color).
+  // Only used for the base layer; flap draws remain individual (unique shape per frame).
+  const _baseDrawBuckets = new Map<string, number[]>();
+
   /**
    * Queue a triangle to be patched into the static cache.
    * Must call flushPatches() before the next renderFrame to apply.
@@ -851,50 +859,159 @@ export function createRenderer(ctx: CanvasRenderingContext2D, triCoords?: Float3
         // Set lineWidth once per frame — applyDepthShading skips redundant per-triangle sets
         ctx.lineWidth = 0.7;
 
-        // Draw only animating triangles on top — O(K) when foldingIndices provided
-        if (hasAnim && animStates) {
-          if (foldingIndices) {
-            // O(K): iterate Set directly — no Array.from allocation
-            for (const i of foldingIndices) {
+        // Draw only animating triangles on top — O(K) when foldingIndices provided.
+        //
+        // Two-pass batch strategy (triCoords path only):
+        //  Pass 1: Collect all base (old-color) triangles into compound paths by variedOldColor,
+        //          emit one fill+stroke per unique old color — typically 2 compound paths
+        //          instead of K individual beginPath+fill+stroke calls.
+        //  Pass 2: Draw each flap individually (unique shape per frame, can't batch).
+        // This reduces canvas state changes from 6K → ~4 + K (batch bases) vs 6K before.
+        if (hasAnim && animStates && triCoords) {
+          // Clear base-draw buckets (truncate in-place to avoid GC)
+          for (const bucket of _baseDrawBuckets.values()) bucket.length = 0;
+
+          // Determine the active set to iterate
+          const iterSet = foldingIndices || null;
+
+          // Pass 1: batch base draws by variedOldColor
+          if (iterSet) {
+            for (const i of iterSet) {
               const anim = animStates[i];
               if (!anim || anim.progress <= 0 || anim.progress >= 1.15) continue;
-              if (triCoords) {
-                // Zero-allocation: read raw coords and call drawFoldingTriangleRaw directly
-                const base = i * COORDS_STRIDE;
-                const i0 = anim.foldEdgeIdx;
-                const i1 = (i0 + 1) % 3;
-                const i2 = (i0 + 2) % 3;
-                this.drawFoldingTriangleRaw(
-                  triCoords[base + i0 * 2],     triCoords[base + i0 * 2 + 1],
-                  triCoords[base + i1 * 2],     triCoords[base + i1 * 2 + 1],
-                  triCoords[base + i2 * 2],     triCoords[base + i2 * 2 + 1],
-                  anim.oldColor, anim.newColor, anim.progress, anim.foldEdgeIdx, i
-                );
-              } else {
-                const pts = triangles[i].points as [number, number][];
-                this.drawFoldingTriangle(pts, anim.oldColor, anim.newColor, anim.progress, anim.foldEdgeIdx, i);
-              }
+              const variedOld = applyTriVariation(anim.oldColor!, i);
+              let bucket = _baseDrawBuckets.get(variedOld);
+              if (!bucket) { bucket = []; _baseDrawBuckets.set(variedOld, bucket); }
+              bucket.push(i);
             }
           } else {
-            // O(N) fallback when no active-set provided
             for (let i = 0; i < triangles.length; i++) {
               const anim = animStates[i];
               if (!anim || anim.progress <= 0 || anim.progress >= 1.15) continue;
-              if (triCoords) {
-                const base = i * COORDS_STRIDE;
-                const i0 = anim.foldEdgeIdx;
-                const i1 = (i0 + 1) % 3;
-                const i2 = (i0 + 2) % 3;
-                this.drawFoldingTriangleRaw(
-                  triCoords[base + i0 * 2],     triCoords[base + i0 * 2 + 1],
-                  triCoords[base + i1 * 2],     triCoords[base + i1 * 2 + 1],
-                  triCoords[base + i2 * 2],     triCoords[base + i2 * 2 + 1],
-                  anim.oldColor, anim.newColor, anim.progress, anim.foldEdgeIdx, i
-                );
+              const variedOld = applyTriVariation(anim.oldColor!, i);
+              let bucket = _baseDrawBuckets.get(variedOld);
+              if (!bucket) { bucket = []; _baseDrawBuckets.set(variedOld, bucket); }
+              bucket.push(i);
+            }
+          }
+          // Emit one compound fill+stroke per unique variedOldColor
+          for (const [variedOld, bucket] of _baseDrawBuckets) {
+            if (bucket.length === 0) continue;
+            ctx.beginPath();
+            for (const i of bucket) {
+              const base = i * COORDS_STRIDE;
+              const anim = animStates[i]!;
+              const i0 = anim.foldEdgeIdx;
+              const i1 = (i0 + 1) % 3;
+              const i2 = (i0 + 2) % 3;
+              ctx.moveTo(triCoords[base + i0 * 2],     triCoords[base + i0 * 2 + 1]);
+              ctx.lineTo(triCoords[base + i1 * 2],     triCoords[base + i1 * 2 + 1]);
+              ctx.lineTo(triCoords[base + i2 * 2],     triCoords[base + i2 * 2 + 1]);
+              ctx.closePath();
+            }
+            ctx.fillStyle = variedOld;
+            ctx.fill();
+            ctx.strokeStyle = creaseColor(variedOld);
+            ctx.stroke();
+          }
+
+          // Pass 2: draw flaps individually (unique shape per frame)
+          if (iterSet) {
+            for (const i of iterSet) {
+              const anim = animStates[i];
+              if (!anim || anim.progress <= 0 || anim.progress >= 1.15) continue;
+              if (anim.progress <= 0.005) continue; // flap invisible — skip
+              const base = i * COORDS_STRIDE;
+              const i0 = anim.foldEdgeIdx;
+              const i1 = (i0 + 1) % 3;
+              const i2 = (i0 + 2) % 3;
+              const ex0 = triCoords[base + i0 * 2],     ey0 = triCoords[base + i0 * 2 + 1];
+              const ex1 = triCoords[base + i1 * 2],     ey1 = triCoords[base + i1 * 2 + 1];
+              const ax  = triCoords[base + i2 * 2],     ay  = triCoords[base + i2 * 2 + 1];
+              const variedNew = applyTriVariation(anim.newColor!, i);
+              let projX: number, projY: number;
+              if (foldGeomCache) {
+                const gbase = i * 4;
+                projX = foldGeomCache[gbase];
+                projY = foldGeomCache[gbase + 1];
               } else {
-                const pts = triangles[i].points as [number, number][];
-                this.drawFoldingTriangle(pts, anim.oldColor, anim.newColor, anim.progress, anim.foldEdgeIdx, i);
+                const edgeX = ex1 - ex0, edgeY = ey1 - ey0;
+                const edgeLenSq = edgeX * edgeX + edgeY * edgeY;
+                const t = edgeLenSq > 0 ? ((ax - ex0) * edgeX + (ay - ey0) * edgeY) / edgeLenSq : 0;
+                projX = ex0 + t * edgeX;
+                projY = ey0 + t * edgeY;
               }
+              const p = Math.min(1.05, Math.max(0, anim.progress));
+              const flapProgress = Math.min(1.1, p);
+              const flapApexX = projX + (ax - projX) * flapProgress;
+              const flapApexY = projY + (ay - projY) * flapProgress;
+              const shadowAmount = Math.max(0, (1 - flapProgress) * 0.25);
+              ctx.beginPath();
+              ctx.moveTo(ex0, ey0);
+              ctx.lineTo(ex1, ey1);
+              ctx.lineTo(flapApexX, flapApexY);
+              ctx.closePath();
+              ctx.fillStyle = darkenedHex(variedNew, shadowAmount);
+              ctx.fill();
+              ctx.strokeStyle = creaseColor(variedNew);
+              ctx.stroke();
+            }
+          } else {
+            for (let i = 0; i < triangles.length; i++) {
+              const anim = animStates[i];
+              if (!anim || anim.progress <= 0.005 || anim.progress >= 1.15) continue;
+              const base = i * COORDS_STRIDE;
+              const i0 = anim.foldEdgeIdx;
+              const i1 = (i0 + 1) % 3;
+              const i2 = (i0 + 2) % 3;
+              const ex0 = triCoords[base + i0 * 2],     ey0 = triCoords[base + i0 * 2 + 1];
+              const ex1 = triCoords[base + i1 * 2],     ey1 = triCoords[base + i1 * 2 + 1];
+              const ax  = triCoords[base + i2 * 2],     ay  = triCoords[base + i2 * 2 + 1];
+              const variedNew = applyTriVariation(anim.newColor!, i);
+              let projX: number, projY: number;
+              if (foldGeomCache) {
+                const gbase = i * 4;
+                projX = foldGeomCache[gbase];
+                projY = foldGeomCache[gbase + 1];
+              } else {
+                const edgeX = ex1 - ex0, edgeY = ey1 - ey0;
+                const edgeLenSq = edgeX * edgeX + edgeY * edgeY;
+                const t = edgeLenSq > 0 ? ((ax - ex0) * edgeX + (ay - ey0) * edgeY) / edgeLenSq : 0;
+                projX = ex0 + t * edgeX;
+                projY = ey0 + t * edgeY;
+              }
+              const p = Math.min(1.05, Math.max(0, anim.progress));
+              const flapProgress = Math.min(1.1, p);
+              const flapApexX = projX + (ax - projX) * flapProgress;
+              const flapApexY = projY + (ay - projY) * flapProgress;
+              const shadowAmount = Math.max(0, (1 - flapProgress) * 0.25);
+              ctx.beginPath();
+              ctx.moveTo(ex0, ey0);
+              ctx.lineTo(ex1, ey1);
+              ctx.lineTo(flapApexX, flapApexY);
+              ctx.closePath();
+              ctx.fillStyle = darkenedHex(variedNew, shadowAmount);
+              ctx.fill();
+              ctx.strokeStyle = creaseColor(variedNew);
+              ctx.stroke();
+            }
+          }
+        } else if (hasAnim && animStates) {
+          // Fallback for environments without triCoords (tests / no typed array)
+          const iterSet = foldingIndices || null;
+          if (iterSet) {
+            for (const i of iterSet) {
+              const anim = animStates[i];
+              if (!anim || anim.progress <= 0 || anim.progress >= 1.15) continue;
+              const pts = triangles[i].points as [number, number][];
+              this.drawFoldingTriangle(pts, anim.oldColor!, anim.newColor!, anim.progress, anim.foldEdgeIdx, i);
+            }
+          } else {
+            for (let i = 0; i < triangles.length; i++) {
+              const anim = animStates[i];
+              if (!anim || anim.progress <= 0 || anim.progress >= 1.15) continue;
+              const pts = triangles[i].points as [number, number][];
+              this.drawFoldingTriangle(pts, anim.oldColor!, anim.newColor!, anim.progress, anim.foldEdgeIdx, i);
             }
           }
         }

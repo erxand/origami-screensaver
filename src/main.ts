@@ -81,6 +81,7 @@ window.addEventListener('keydown', (e: KeyboardEvent) => {
       const cur = screensaver.getParam('speed') ?? 1;
       const next = SPEED_STEPS.find(s => s > cur + 0.01) ?? SPEED_STEPS[SPEED_STEPS.length - 1];
       screensaver.setParam('speed', next);
+      if (controls) controls.syncSpeed(next);
       break;
     }
     case '-':
@@ -88,6 +89,7 @@ window.addEventListener('keydown', (e: KeyboardEvent) => {
       const cur = screensaver.getParam('speed') ?? 1;
       const prev = [...SPEED_STEPS].reverse().find(s => s < cur - 0.01) ?? SPEED_STEPS[0];
       screensaver.setParam('speed', prev);
+      if (controls) controls.syncSpeed(prev);
       break;
     }
   }
