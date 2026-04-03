@@ -167,7 +167,10 @@ export function createScreensaver(canvas: HTMLCanvasElement, options: Screensave
 
       const tri = grid.triangles[idx];
 
-      let foldEdgeIdx = findEdgeFoldEdge(tri, cw, ch);
+      // Disabled findEdgeFoldEdge — it picks edges facing the viewport boundary,
+      // which causes the new-color flap to fold off-screen (invisible), leaving
+      // edge triangles showing old color until the fold completes.
+      let foldEdgeIdx = -1;
       if (foldEdgeIdx === -1) {
         // Find a random neighbor already in this cascade — any of them is a valid
         // "fold from" direction. Count valid neighbors first, then pick one randomly.
