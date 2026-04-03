@@ -36,13 +36,15 @@ export function createPaletteCycler(startPaletteIdx = 0) {
       return pal[colorIdx % pal.length];
     },
 
-    /** Advance to the next color; wraps to next palette when exhausted. */
+    /** Pick a random color from the current palette that isn't the current one. */
     nextColor(): string {
       const pal = this.currentPalette();
-      colorIdx++;
-      if (colorIdx >= pal.length) {
-        colorIdx = 0;
-        paletteIdx = (paletteIdx + 1) % PALETTE_NAMES.length;
+      const prev = colorIdx;
+      // Pick a different color randomly
+      if (pal.length > 1) {
+        let next = Math.floor(Math.random() * (pal.length - 1));
+        if (next >= prev) next++;
+        colorIdx = next;
       }
       return this.currentColor();
     },

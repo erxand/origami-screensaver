@@ -43,31 +43,30 @@ describe('createPaletteCycler', () => {
     expect(cycler.currentColor()).toBe(PALETTES[FIRST][0]);
   });
 
-  it('nextColor advances through the palette', () => {
+  it('nextColor picks a different color from the same palette', () => {
     const cycler = createPaletteCycler(0);
     const first = cycler.currentColor();
     const second = cycler.nextColor();
-    expect(second).toBe(PALETTES[FIRST][1]);
     expect(second).not.toBe(first);
+    expect(PALETTES[FIRST]).toContain(second);
   });
 
-  it('wraps to the next palette after exhausting current', () => {
+  it('nextColor always stays within current palette', () => {
     const cycler = createPaletteCycler(0);
-    const palLen = PALETTES[FIRST].length;
-    for (let i = 0; i < palLen; i++) {
-      cycler.nextColor();
+    for (let i = 0; i < 20; i++) {
+      const color = cycler.nextColor();
+      expect(PALETTES[FIRST]).toContain(color);
     }
-    expect(cycler.currentPaletteName()).toBe(SECOND);
   });
 
-  it('wraps around all palettes', () => {
+  it('nextColor never picks the same color twice in a row', () => {
     const cycler = createPaletteCycler(0);
-    const totalColors = PALETTE_NAMES.reduce((sum, n) => sum + PALETTES[n].length, 0);
-    for (let i = 0; i < totalColors; i++) {
-      cycler.nextColor();
+    let prev = cycler.currentColor();
+    for (let i = 0; i < 50; i++) {
+      const next = cycler.nextColor();
+      expect(next).not.toBe(prev);
+      prev = next;
     }
-    // Should be back to first palette
-    expect(cycler.currentPaletteName()).toBe(FIRST);
   });
 
   it('randomColorExcluding returns a different color', () => {
