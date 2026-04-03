@@ -207,7 +207,6 @@ export function createControls(screensaver: ScreensaverInstance, opts: ControlsO
   const initSpeed    = screensaver.getParam('speed') ?? 1;
   const initWait     = screensaver.getParam('waitTime') ?? 8000;
   const initSize     = screensaver.getParam('side') ?? 0;
-  const initCascades = screensaver.getParam('maxConcurrent') ?? 2;
 
   const panel = document.createElement('div');
   panel.style.cssText = PANEL_CSS;
@@ -232,10 +231,6 @@ export function createControls(screensaver: ScreensaverInstance, opts: ControlsO
   // 0 = auto-size (responsive). Label shows "Auto" when 0.
   const sideRow = makeSliderRow('Triangle Size', 'oc-size', 0, 200, 5, initSize, 'px');
   panel.appendChild(sideRow);
-
-  // Cascades: 1 → 5
-  const cascRow = makeSliderRow('Cascades', 'oc-cascades', 1, 5, 1, initCascades, '');
-  panel.appendChild(cascRow);
 
   // Palette buttons
   const paletteRow = makePaletteRow(palettes, currentPaletteIdx, (idx) => {
@@ -283,15 +278,6 @@ export function createControls(screensaver: ScreensaverInstance, opts: ControlsO
   sizeSlider.addEventListener('change', () => {
     const v = parseInt(sizeSlider.value, 10);
     screensaver.setParam('side', v);
-  });
-
-  // Wire cascades slider
-  const cascSlider = panel.querySelector('#oc-cascades') as HTMLInputElement;
-  const cascVal    = panel.querySelector('#oc-cascades-val') as HTMLElement;
-  cascSlider.addEventListener('input', () => {
-    const v = parseInt(cascSlider.value, 10);
-    cascVal.textContent = String(v);
-    screensaver.setParam('maxConcurrent', v);
   });
 
   let visible = false;

@@ -98,44 +98,29 @@ function adjustBrightness(r: number, g: number, b: number, factor: number): [num
 }
 
 /**
- * Per-triangle lightness variation values.
- * Each entry is in [-0.08, +0.08]. Re-randomized when a triangle completes a fold
- * so the shading pattern changes with each color transition — looks more natural.
+ * Per-triangle lightness variation derived from both index AND color.
+ * Each (index, color) pair produces a different variation, so the shading
+ * pattern naturally changes with each color transition — no explicit
+ * rerandomize step needed.
  */
-let _triVariations: Float32Array = new Float32Array(0);
-
-/** Initialize or resize the variation array, filling new entries with random values. */
-export function initTriVariations(count: number): void {
-  if (_triVariations.length >= count) return;
-  const old = _triVariations;
-  _triVariations = new Float32Array(count);
-  _triVariations.set(old); // copy existing
-  for (let i = old.length; i < count; i++) {
-    _triVariations[i] = Math.random() * 0.16 - 0.08;
-  }
-}
-
-/** Re-randomize the variation for a single triangle (call on fold completion). */
-export function rerandomizeTriVariation(index: number): void {
-  if (index >= 0 && index < _triVariations.length) {
-    _triVariations[index] = Math.random() * 0.16 - 0.08;
-  }
-}
-
-/**
- * Get the current variation for a triangle.
- * Returns a value in [-0.08, +0.08].
- */
-export function triVariation(index: number): number {
-  if (index >= 0 && index < _triVariations.length) return _triVariations[index];
-  // Fallback: deterministic hash for tests without initTriVariations
-  let h = Math.imul(index >>> 0, 0x9e3779b9) >>> 0;
+export function triVariation(index: number, colorHash = 0): number {
+  // Knuth multiplicative hash mixing index + color
+  let h = Math.imul((index ^ colorHash) >>> 0, 0x9e3779b9) >>> 0;
   h ^= h >>> 16;
   h = Math.imul(h, 0x85ebca6b) >>> 0;
   h ^= h >>> 13;
   h = Math.imul(h, 0xc2b2ae35) >>> 0;
   h ^= h >>> 16;
   return ((h >>> 0) / 0xffffffff) * 0.16 - 0.08;
+}
+
+/** Simple string hash for mixing color into variation. */
+function hashColor(color: string): number {
+  let h = 0;
+  for (let i = 0; i < color.length; i++) {
+    h = Math.imul(31, h) + color.charCodeAt(i) | 0;
+  }
+  return h;
 }
 
 // ---------------------------------------------------------------------------
@@ -146,19 +131,9 @@ export function triVariation(index: number): number {
 const _triVariationCache = new Map<string, Map<number, string>>();
 
 /**
- * Invalidate the cached varied color for a single triangle across all base colors.
- * Called after rerandomizeTriVariation() so the next applyTriVariation() recomputes.
- */
-export function invalidateTriVariationCache(index: number): void {
-  for (const byIndex of _triVariationCache.values()) {
-    byIndex.delete(index);
-  }
-}
-
-/**
  * Apply per-triangle lightness variation to a hex color.
- * Returns a new hex color shifted by the variation for the given index.
- * If index is -1 (default), no variation is applied.
+ * Variation depends on both index AND color, so each color gets a different
+ * shading pattern per triangle — changes naturally with each fold.
  * Results are cached: same (color, index) → same string, no per-frame allocation.
  */
 export function applyTriVariation(color: string, index: number): string {
@@ -171,7 +146,7 @@ export function applyTriVariation(color: string, index: number): string {
   let cached = byIndex.get(index);
   if (cached === undefined) {
     const [r, g, b] = hexToRgb(color);
-    const v = triVariation(index);
+    const v = triVariation(index, hashColor(color));
     const [nr, ng, nb] = adjustBrightness(r, g, b, v);
     cached = rgbToHex(nr, ng, nb);
     byIndex.set(index, cached);
@@ -197,6 +172,18 @@ export function creaseColor(color: string): string {
     _creaseColorCache.set(color, cached);
   }
   return cached;
+}
+
+/**
+ * Clear all color-derivation caches.
+ * Call on palette change to prevent unbounded growth and keep map sizes small.
+ * Only the base-color entries from old palettes are stale; active colors are
+ * re-populated on the next applyTriVariation / creaseColor call.
+ */
+export function clearColorCaches(): void {
+  _triVariationCache.clear();
+  _creaseColorCache.clear();
+  _darkenedCache.clear();
 }
 
 // ---------------------------------------------------------------------------

@@ -3,7 +3,7 @@
  */
 
 import { createGrid, buildAdjacency } from './grid.js';
-import { createRenderer, initTriVariations, rerandomizeTriVariation, invalidateTriVariationCache } from './renderer.js';
+import { createRenderer, clearColorCaches } from './renderer.js';
 import { createPaletteCycler } from './palette.js';
 import { createAnimStates, startFold, updateAnim, resetAnim, findFoldEdge, State } from './animator.js';
 import { buildCascadeScheduleFlat } from './cascade.js';
@@ -112,7 +112,6 @@ export function createScreensaver(canvas: HTMLCanvasElement, options: Screensave
     grid = createGrid(canvas.clientWidth, canvas.clientHeight, side);
     adjacency = buildAdjacency(grid.rows, grid.cols);
     renderer = createRenderer(ctx, grid.triCoords);
-    initTriVariations(grid.triangles.length);
     animStates = createAnimStates(grid.triangles.length);
     colors = new Array(grid.triangles.length).fill(currentColor);
     renderAnims = new Array(grid.triangles.length).fill(null);
@@ -201,10 +200,6 @@ export function createScreensaver(canvas: HTMLCanvasElement, options: Screensave
           foldEdgeIdx = 0;
         }
       }
-      // Re-randomize lightness variation before the fold starts so the new-color
-      // flap uses the new shading as it folds down — no visible snap on completion.
-      rerandomizeTriVariation(idx);
-      invalidateTriVariationCache(idx);
       startFold(
         anim,
         now + startTime,
@@ -462,6 +457,7 @@ export function createScreensaver(canvas: HTMLCanvasElement, options: Screensave
         break;
       case 'paletteIdx':
         cycler.setPaletteByIndex(value);
+        clearColorCaches(); // old palette's color entries are stale; prevent unbounded map growth
         paletteOverlayText = `Palette: ${cycler.currentPaletteName()}`;
         paletteOverlayTimer = 2000;
         dirty = true;
@@ -526,6 +522,7 @@ export function createScreensaver(canvas: HTMLCanvasElement, options: Screensave
 
     switchPalette() {
       cycler.nextPalette();
+      clearColorCaches(); // old palette's color entries are stale; prevent unbounded map growth
       paletteOverlayText = `Palette: ${cycler.currentPaletteName()}`;
       paletteOverlayTimer = 2500;
       dirty = true;
