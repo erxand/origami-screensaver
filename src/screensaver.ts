@@ -294,11 +294,14 @@ export function createScreensaver(canvas: HTMLCanvasElement, options: Screensave
             // from completedNewColor → pendingColor so the triangle catches up.
             // This avoids the "revert" bug where redirecting newColor mid-fold would
             // set oldColor === newColor, making the fold appear to snap back.
-            const tri = grid.triangles[i];
-            const cw = canvas.clientWidth;
-            const ch = canvas.clientHeight;
-            let foldEdgeIdx = findEdgeFoldEdge(tri, cw, ch);
-            if (foldEdgeIdx === -1) foldEdgeIdx = anim.foldEdgeIdx; // reuse same edge
+
+            // Reuse the same fold edge — consistent with how startCascade picks edges.
+            // findEdgeFoldEdge was disabled in startCascade (fe0fec8) because it picks
+            // boundary-facing edges that cause the new-color flap to fold off-screen.
+            // The chained fold path had the same bug: left-edge triangles would flash
+            // the correct color during fold 1, then the chained fold 2 would animate
+            // off-screen, leaving the static cache showing the stale intermediate color.
+            const foldEdgeIdx = anim.foldEdgeIdx;
 
             // Patch static cache to completedNewColor BEFORE starting fold 2.
             // Fold 2 begins at progress=0, which is skipped by renderFrame's animated
@@ -399,7 +402,7 @@ export function createScreensaver(canvas: HTMLCanvasElement, options: Screensave
       case 'speed':
         // Store as float to preserve round-trip accuracy through getParam.
         // Clamp to [0.25, 4.0] matching URL param validation and slider range.
-        foldDuration = 400 / Math.max(0.25, Math.min(4.0, value));
+        foldDuration = FOLD_DURATION / Math.max(0.25, Math.min(4.0, value));
         break;
       case 'waitTime':
         waitTime = value;
@@ -434,7 +437,7 @@ export function createScreensaver(canvas: HTMLCanvasElement, options: Screensave
 
   function getParam(key: string): number | undefined {
     switch (key) {
-      case 'speed':        return Math.round((400 / foldDuration) * 100) / 100;
+      case 'speed':        return Math.round((FOLD_DURATION / foldDuration) * 100) / 100;
       case 'waitTime':     return waitTime;
       case 'side':         return sideOverride;
       case 'maxConcurrent': return maxConcurrent;

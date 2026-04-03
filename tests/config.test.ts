@@ -6,7 +6,7 @@ describe('parseConfig', () => {
     const cfg = parseConfig('');
     expect(cfg).toEqual({
       paletteIdx: 0,
-      foldDuration: 400,
+      foldDuration: 200,
       side: 0,
       density: 500,
       maxConcurrent: 2,
@@ -29,24 +29,24 @@ describe('parseConfig', () => {
     expect(cfg.paletteIdx).toBe(0);
   });
 
-  it('parses speed=2 → foldDuration 200', () => {
+  it('parses speed=2 → foldDuration 100', () => {
     const cfg = parseConfig('?speed=2');
-    expect(cfg.foldDuration).toBe(200);
+    expect(cfg.foldDuration).toBe(100);
   });
 
-  it('parses speed=0.5 → foldDuration 800', () => {
+  it('parses speed=0.5 → foldDuration 400', () => {
     const cfg = parseConfig('?speed=0.5');
-    expect(cfg.foldDuration).toBe(800);
+    expect(cfg.foldDuration).toBe(400);
   });
 
   it('clamps speed below min (0.25)', () => {
     const cfg = parseConfig('?speed=0.01');
-    expect(cfg.foldDuration).toBe(Math.round(400 / 0.25));
+    expect(cfg.foldDuration).toBe(Math.round(200 / 0.25));
   });
 
   it('clamps speed above max (4.0)', () => {
     const cfg = parseConfig('?speed=100');
-    expect(cfg.foldDuration).toBe(Math.round(400 / 4.0));
+    expect(cfg.foldDuration).toBe(Math.round(200 / 4.0));
   });
 
   it('parses size=60 → side 60', () => {
@@ -101,15 +101,16 @@ describe('parseConfig', () => {
 
   it('accepts URLSearchParams object', () => {
     const params = new URLSearchParams('palette=ember&speed=2');
+    // speed=2 → 200/2 = 100ms fold duration
     const cfg = parseConfig(params);
     expect(cfg.paletteIdx).toBe(2);
-    expect(cfg.foldDuration).toBe(200);
+    expect(cfg.foldDuration).toBe(100);
   });
 
   it('parses combined params', () => {
     const cfg = parseConfig('?palette=ocean&speed=1.5&size=80&cascades=1&wait=5000&density=2000');
     expect(cfg.paletteIdx).toBe(0);
-    expect(cfg.foldDuration).toBe(Math.round(400 / 1.5));
+    expect(cfg.foldDuration).toBe(Math.round(200 / 1.5));
     expect(cfg.side).toBe(80);
     expect(cfg.maxConcurrent).toBe(1);
     expect(cfg.waitTime).toBe(5000);
@@ -119,17 +120,17 @@ describe('parseConfig', () => {
 
 describe('buildConfigUrl', () => {
   it('returns empty string for all-default config', () => {
-    const url = buildConfigUrl({ paletteIdx: 0, foldDuration: 400, side: 0, density: 500, maxConcurrent: 2, waitTime: 8000 });
+    const url = buildConfigUrl({ paletteIdx: 0, foldDuration: 200, side: 0, density: 500, maxConcurrent: 2, waitTime: 8000 });
     expect(url).toBe('');
   });
 
   it('encodes non-default palette', () => {
-    const url = buildConfigUrl({ paletteIdx: 1, foldDuration: 400, side: 0, density: 500, maxConcurrent: 2, waitTime: 8000 });
+    const url = buildConfigUrl({ paletteIdx: 1, foldDuration: 200, side: 0, density: 500, maxConcurrent: 2, waitTime: 8000 });
     expect(url).toContain('palette=sakura');
   });
 
   it('encodes speed when foldDuration is non-default', () => {
-    const url = buildConfigUrl({ paletteIdx: 0, foldDuration: 200, side: 0, density: 500, maxConcurrent: 2, waitTime: 8000 });
+    const url = buildConfigUrl({ paletteIdx: 0, foldDuration: 100, side: 0, density: 500, maxConcurrent: 2, waitTime: 8000 });
     expect(url).toContain('speed=2');
   });
 
