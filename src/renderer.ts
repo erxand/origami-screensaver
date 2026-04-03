@@ -98,19 +98,43 @@ function adjustBrightness(r: number, g: number, b: number, factor: number): [num
 }
 
 /**
- * Deterministic per-triangle lightness variation.
- * Returns a value in [-0.08, +0.08] derived from the triangle index via
- * Knuth multiplicative hashing — stable across frames, visually random.
+ * Per-triangle lightness variation values.
+ * Each entry is in [-0.08, +0.08]. Re-randomized when a triangle completes a fold
+ * so the shading pattern changes with each color transition — looks more natural.
+ */
+let _triVariations: Float32Array = new Float32Array(0);
+
+/** Initialize or resize the variation array, filling new entries with random values. */
+export function initTriVariations(count: number): void {
+  if (_triVariations.length >= count) return;
+  const old = _triVariations;
+  _triVariations = new Float32Array(count);
+  _triVariations.set(old); // copy existing
+  for (let i = old.length; i < count; i++) {
+    _triVariations[i] = Math.random() * 0.16 - 0.08;
+  }
+}
+
+/** Re-randomize the variation for a single triangle (call on fold completion). */
+export function rerandomizeTriVariation(index: number): void {
+  if (index >= 0 && index < _triVariations.length) {
+    _triVariations[index] = Math.random() * 0.16 - 0.08;
+  }
+}
+
+/**
+ * Get the current variation for a triangle.
+ * Returns a value in [-0.08, +0.08].
  */
 export function triVariation(index: number): number {
-  // Knuth multiplicative hash (uint32)
+  if (index >= 0 && index < _triVariations.length) return _triVariations[index];
+  // Fallback: deterministic hash for tests without initTriVariations
   let h = Math.imul(index >>> 0, 0x9e3779b9) >>> 0;
   h ^= h >>> 16;
   h = Math.imul(h, 0x85ebca6b) >>> 0;
   h ^= h >>> 13;
   h = Math.imul(h, 0xc2b2ae35) >>> 0;
   h ^= h >>> 16;
-  // Map to [-0.08, +0.08]
   return ((h >>> 0) / 0xffffffff) * 0.16 - 0.08;
 }
 
@@ -118,9 +142,18 @@ export function triVariation(index: number): number {
 // Per-triangle color variation cache
 // Cache: Map<baseColor, Map<triIndex, variedColor>>
 // Only 6 palette colors × ~3000 triangle indices = bounded.
-// Cache is cleared when a new base color is first seen after palette change.
 // ---------------------------------------------------------------------------
 const _triVariationCache = new Map<string, Map<number, string>>();
+
+/**
+ * Invalidate the cached varied color for a single triangle across all base colors.
+ * Called after rerandomizeTriVariation() so the next applyTriVariation() recomputes.
+ */
+export function invalidateTriVariationCache(index: number): void {
+  for (const byIndex of _triVariationCache.values()) {
+    byIndex.delete(index);
+  }
+}
 
 /**
  * Apply per-triangle lightness variation to a hex color.

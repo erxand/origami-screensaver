@@ -3,7 +3,7 @@
  */
 
 import { createGrid, buildAdjacency } from './grid.js';
-import { createRenderer } from './renderer.js';
+import { createRenderer, initTriVariations, rerandomizeTriVariation, invalidateTriVariationCache } from './renderer.js';
 import { createPaletteCycler } from './palette.js';
 import { createAnimStates, startFold, updateAnim, resetAnim, findFoldEdge, State } from './animator.js';
 import { buildCascadeScheduleFlat } from './cascade.js';
@@ -112,6 +112,7 @@ export function createScreensaver(canvas: HTMLCanvasElement, options: Screensave
     grid = createGrid(canvas.clientWidth, canvas.clientHeight, side);
     adjacency = buildAdjacency(grid.rows, grid.cols);
     renderer = createRenderer(ctx, grid.triCoords);
+    initTriVariations(grid.triangles.length);
     animStates = createAnimStates(grid.triangles.length);
     colors = new Array(grid.triangles.length).fill(currentColor);
     renderAnims = new Array(grid.triangles.length).fill(null);
@@ -328,6 +329,9 @@ export function createScreensaver(canvas: HTMLCanvasElement, options: Screensave
             ra.foldEdgeIdx = anim.foldEdgeIdx;
           } else {
             resetAnim(anim);
+            // Re-randomize lightness variation so shading changes with each color
+            rerandomizeTriVariation(i);
+            invalidateTriVariationCache(i);
             // Enqueue patch — all completions this tick flush together in flushPatches()
             renderer.enqueuePatch(grid.triangles[i], colors[i], i);
             _completedBuf[_completedLen++] = i;
