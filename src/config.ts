@@ -6,7 +6,7 @@
  *   ?speed=0.5                     — fold speed multiplier (0.25–4.0; 1.0 = default)
  *   ?size=60                       — triangle side length in px (20–200; 0 = auto)
  *   ?density=1000                  — target triangle count for auto-size (100–5000)
- *   ?cascades=2                    — max simultaneous cascades (1–5)
+ *   ?cascades=2                    — (accepted but no effect; single cascade mode is always active)
  *   ?wait=8000                     — ms between cascade waves (500–30000)
  */
 

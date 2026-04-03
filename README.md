@@ -153,11 +153,14 @@ Press `P` to cycle palettes with a HUD overlay.
 
 - [ ] **[ONGOING-A] Performance — always be optimizing.** Profile, find bottleneck, fix it, measure. Areas: OffscreenCanvas + Worker for texture gen, batch same-color triangles into single path, WebGL renderer for 1000+ tris.
 - [ ] **[ONGOING-B] Bug hunting — use the app, break it.** Alternate with performance work. Actually run the screensaver, interact with it like a user would, and find bugs. Try: rapid palette switches, resizing window during cascade, very slow/fast speed params, switching palettes at exact start/end of cascade, leaving it running for 10+ minutes and watching for drift or stuck states, URL param edge cases. When you find a bug: fix it immediately if straightforward, or add it to Roadmap with a clear description if complex. Track which bugs you found and fixed in ## Completed.
-- [ ] **Dead `?cascades` URL param** — `maxConcurrent > 1` is unreachable via the main tick loop because the cascade trigger requires `foldingSet.size === 0` (all previous folds done). The param is parsed and stored but has no effect. Either document this intentional behavior ("single cascade at a time, always") or restore concurrent cascade support as an option.
+
 
 
 ## Completed
 
+- ✅ **Palette switch mid-cascade color fix** — `redirectActiveCascade()` only updated triangles still in `foldingSet`, missing those that had already completed their fold and committed to the old cascade color. Fix: also update `colors[i]` for all idle triangles showing the old color + invalidate static cache. Prevents 3-color artifacts when pressing P mid-cascade.
+- ✅ **Dead `?cascades` URL param resolved** — documented that single-cascade mode is intentional (`foldingSet.size === 0` gate); `?cascades` param is accepted but has no effect; `maxConcurrent` default changed from 2→1 to match actual behavior; dead code removed (unused `cw`/`ch` vars, always-true `foldEdgeIdx === -1` guard).
+- ✅ **sim.ts fold duration default mismatch** — `DEFAULT_FOLD_DURATION` was 600ms in sim.ts but 400ms in screensaver.ts; corrected to 400ms for consistent test behavior.
 - ✅ **screensaver.ts density default mismatch + setParam speed clamp** — `targetDensity` default was `?? 1000` in screensaver.ts but config.ts defaults to 500; corrected to `?? 500` for consistent URL-param/direct-API behavior. Also unified `setParam('speed', v)` clamp to `[0.25, 4.0]` matching URL param validation and slider range (was clamping only at 0.1).
 
 - ✅ **Controls panel Triangle Size shows "Auto" for 0** — slider min changed to 0 (was 20); label shows "Auto" when value=0 instead of "0px"; `setParam('side')` now clamps non-zero values to [20,200] matching URL param validation; prevents accidentally creating sub-20px grid via controls drag
