@@ -8,7 +8,6 @@ export const PALETTES: Record<string, string[]> = {
   sakura: ['#f8c3cd', '#f7a1b0', '#e87e94', '#d4a5a5', '#f0e0d6', '#fff5ee'],
   ember:  ['#d35400', '#e67e22', '#f39c12', '#c0392b', '#7f2b0a', '#2c2c2c'],
   forest: ['#1b4332', '#2d6a4f', '#40916c', '#52b788', '#95d5b2', '#d8f3dc'],
-  parrot: ['#2471FF', '#64D2FF', '#20FC8F', '#FF55A3', '#FFFFFF', '#000000'],
 };
 
 export const PALETTE_NAMES: string[] = Object.keys(PALETTES);
