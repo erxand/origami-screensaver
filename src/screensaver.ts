@@ -201,6 +201,10 @@ export function createScreensaver(canvas: HTMLCanvasElement, options: Screensave
           foldEdgeIdx = 0;
         }
       }
+      // Re-randomize lightness variation before the fold starts so the new-color
+      // flap uses the new shading as it folds down — no visible snap on completion.
+      rerandomizeTriVariation(idx);
+      invalidateTriVariationCache(idx);
       startFold(
         anim,
         now + startTime,
@@ -329,9 +333,6 @@ export function createScreensaver(canvas: HTMLCanvasElement, options: Screensave
             ra.foldEdgeIdx = anim.foldEdgeIdx;
           } else {
             resetAnim(anim);
-            // Re-randomize lightness variation so shading changes with each color
-            rerandomizeTriVariation(i);
-            invalidateTriVariationCache(i);
             // Enqueue patch — all completions this tick flush together in flushPatches()
             renderer.enqueuePatch(grid.triangles[i], colors[i], i);
             _completedBuf[_completedLen++] = i;
@@ -407,6 +408,33 @@ export function createScreensaver(canvas: HTMLCanvasElement, options: Screensave
     animFrameId = requestAnimationFrame(tick);
   }
 
+  /**
+   * Redirect all in-progress folds to a new target color without starting a new cascade.
+   * Called when a palette switch happens while a cascade is running — prevents 3-color artifacts
+   * by changing where the current cascade's fold flaps land, rather than chaining new folds.
+   *
+   * For each FOLDING triangle in foldingSet:
+   *  - Change anim.newColor to newColor so the fold flap shows the new palette color
+   *  - Clear any stale pendingColor (it would re-override us otherwise)
+   * The active cascade tracking + currentColor are also updated so completions and rebuilds
+   * use the right color.
+   */
+  function redirectActiveCascade(newColor: string): void {
+    for (const i of foldingSet) {
+      const anim = animStates[i];
+      if (anim.state !== State.FOLDING) continue;
+      anim.newColor = newColor;
+      anim.pendingColor = null; // stale pending from previous redirect (if any) must be cleared
+    }
+    // Update cascade tracking so prune logic and maxScheduleStart stay consistent
+    for (const cascade of activeCascades) {
+      (cascade as ActiveCascade & { newColor: string }).newColor = newColor;
+    }
+    currentColor = newColor;
+    // Static cache will be rebuilt when folds complete (active→idle transition)
+    dirty = true;
+  }
+
   // ── Live param API ──────────────────────────────────────────────────────────
 
   function setParam(key: string, value: number): void {
@@ -439,9 +467,16 @@ export function createScreensaver(canvas: HTMLCanvasElement, options: Screensave
         dirty = true;
         if (running && grid) {
           const now = performance.now();
-          if (activeCascades.length >= maxConcurrent) activeCascades.shift();
-          startCascade(now, cycler.currentColor());
-          waitingUntil = now + waitTime;
+          if (foldingSet.size > 0) {
+            // A cascade is in progress — redirect its folds to the new palette color
+            // instead of starting a new overlapping cascade (which would show 3 colors).
+            redirectActiveCascade(cycler.currentColor());
+          } else {
+            // No active folds — start a fresh cascade immediately
+            activeCascades = [];
+            startCascade(now, cycler.currentColor());
+            waitingUntil = now + waitTime;
+          }
         }
         break;
     }
@@ -496,9 +531,16 @@ export function createScreensaver(canvas: HTMLCanvasElement, options: Screensave
       dirty = true;
       if (running && grid) {
         const now = performance.now();
-        if (activeCascades.length >= maxConcurrent) activeCascades.shift();
-        startCascade(now, cycler.currentColor());
-        waitingUntil = now + waitTime;
+        if (foldingSet.size > 0) {
+          // A cascade is in progress — redirect its folds to the new palette color
+          // instead of starting a new overlapping cascade (which would show 3 colors).
+          redirectActiveCascade(cycler.currentColor());
+        } else {
+          // No active folds — start a fresh cascade immediately
+          activeCascades = [];
+          startCascade(now, cycler.currentColor());
+          waitingUntil = now + waitTime;
+        }
       }
     },
 
