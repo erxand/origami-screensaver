@@ -349,9 +349,13 @@ export function createScreensaver(canvas: HTMLCanvasElement, options: Screensave
     }
     for (let _ci2 = 0; _ci2 < _completedLen; _ci2++) foldingSet.delete(_completedBuf[_ci2]);
 
-    // Mark dirty when transition from active → idle (need one final clean frame)
+    // Mark dirty when transition from active → idle (need one final clean frame).
+    // Force a full static cache rebuild so the background fill matches the current
+    // color — incremental patches don't repaint the background, so zigzag edge gaps
+    // would keep showing the stale bgColor from the last full rebuild.
     if (prevActiveCount > 0 && activeAnimCount === 0) {
       dirty = true;
+      renderer.invalidateStaticCache();
       // DEBUG: check for color mismatches when going idle
       if (typeof window !== 'undefined' && (window as any).__ssDebug && activeCascades.length === 0) {
         const mismatches: number[] = [];
