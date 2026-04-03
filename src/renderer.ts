@@ -339,14 +339,6 @@ export function createRenderer(ctx: CanvasRenderingContext2D, triCoords?: Float3
   // Reusable scratch map for flushPatches — avoids per-tick Map allocation during cascades.
   const _patchBuckets = new Map<string, number[]>();
 
-  // ── Batched animating base-draw buffers ──────────────────────────────────
-  // During renderFrame, collect all animating triangles' base (old-color) paths
-  // into compound paths grouped by variedOldColor. Reduces K individual
-  // beginPath+fill+stroke calls to ~2 compound paths (typically 2 colors:
-  // old cascade color and chained-fold intermediate color).
-  // Only used for the base layer; flap draws remain individual (unique shape per frame).
-  const _baseDrawBuckets = new Map<string, number[]>();
-
   /**
    * Queue a triangle to be patched into the static cache.
    * Must call flushPatches() before the next renderFrame to apply.
@@ -529,11 +521,19 @@ export function createRenderer(ctx: CanvasRenderingContext2D, triCoords?: Float3
     // avoids dropping the arrays for GC then reallocating them on the next rebuild.
     for (const bucket of _rebuildBuckets.values()) bucket.length = 0;
 
+    // For animating triangles, draw with their OLD color (base color before the fold).
+    // This makes the static canvas a complete visual snapshot: old color everywhere,
+    // including under folds that are currently in-progress. The render loop then only
+    // needs to draw the fold FLAP on top (Pass 2) — no need for a redundant "base" pass
+    // that repaints the old-color triangle over what's already there in the static canvas.
     if (triCoords) {
       for (let i = 0; i < triangles.length; i++) {
         const anim = animStates ? animStates[i] : null;
-        if (anim && anim.progress > 0 && anim.progress < 1.15) continue;
-        const variedColor = applyTriVariation(colors[i], i);
+        // Use oldColor for animating triangles, current committed color for idle ones.
+        const colorToUse = (anim && anim.progress > 0 && anim.progress < 1.15)
+          ? anim.oldColor!
+          : colors[i];
+        const variedColor = applyTriVariation(colorToUse, i);
         let bucket = _rebuildBuckets.get(variedColor);
         if (!bucket) { bucket = []; _rebuildBuckets.set(variedColor, bucket); }
         bucket.push(i);
@@ -560,8 +560,10 @@ export function createRenderer(ctx: CanvasRenderingContext2D, triCoords?: Float3
       // Fallback: nested array access (test environment or no triCoords provided)
       for (let i = 0; i < triangles.length; i++) {
         const anim = animStates ? animStates[i] : null;
-        if (anim && anim.progress > 0 && anim.progress < 1.15) continue;
-        const variedColor = applyTriVariation(colors[i], i);
+        const colorToUse = (anim && anim.progress > 0 && anim.progress < 1.15)
+          ? anim.oldColor!
+          : colors[i];
+        const variedColor = applyTriVariation(colorToUse, i);
         let bucket = _rebuildBuckets.get(variedColor);
         if (!bucket) { bucket = []; _rebuildBuckets.set(variedColor, bucket); }
         bucket.push(i);
@@ -861,61 +863,15 @@ export function createRenderer(ctx: CanvasRenderingContext2D, triCoords?: Float3
 
         // Draw only animating triangles on top — O(K) when foldingIndices provided.
         //
-        // Two-pass batch strategy (triCoords path only):
-        //  Pass 1: Collect all base (old-color) triangles into compound paths by variedOldColor,
-        //          emit one fill+stroke per unique old color — typically 2 compound paths
-        //          instead of K individual beginPath+fill+stroke calls.
-        //  Pass 2: Draw each flap individually (unique shape per frame, can't batch).
-        // This reduces canvas state changes from 6K → ~4 + K (batch bases) vs 6K before.
+        // Static canvas already contains old-color bases for all triangles (including animating ones,
+        // which are painted with oldColor in rebuildStaticCache). So we only need to draw the fold
+        // flap on top — no redundant "base redraw" pass needed.
+        // This reduces canvas ops from ~6K per frame to ~K (flap-only) during cascades.
         if (hasAnim && animStates && triCoords) {
-          // Clear base-draw buckets (truncate in-place to avoid GC)
-          for (const bucket of _baseDrawBuckets.values()) bucket.length = 0;
-
           // Determine the active set to iterate
           const iterSet = foldingIndices || null;
 
-          // Pass 1: batch base draws by variedOldColor
-          if (iterSet) {
-            for (const i of iterSet) {
-              const anim = animStates[i];
-              if (!anim || anim.progress <= 0 || anim.progress >= 1.15) continue;
-              const variedOld = applyTriVariation(anim.oldColor!, i);
-              let bucket = _baseDrawBuckets.get(variedOld);
-              if (!bucket) { bucket = []; _baseDrawBuckets.set(variedOld, bucket); }
-              bucket.push(i);
-            }
-          } else {
-            for (let i = 0; i < triangles.length; i++) {
-              const anim = animStates[i];
-              if (!anim || anim.progress <= 0 || anim.progress >= 1.15) continue;
-              const variedOld = applyTriVariation(anim.oldColor!, i);
-              let bucket = _baseDrawBuckets.get(variedOld);
-              if (!bucket) { bucket = []; _baseDrawBuckets.set(variedOld, bucket); }
-              bucket.push(i);
-            }
-          }
-          // Emit one compound fill+stroke per unique variedOldColor
-          for (const [variedOld, bucket] of _baseDrawBuckets) {
-            if (bucket.length === 0) continue;
-            ctx.beginPath();
-            for (const i of bucket) {
-              const base = i * COORDS_STRIDE;
-              const anim = animStates[i]!;
-              const i0 = anim.foldEdgeIdx;
-              const i1 = (i0 + 1) % 3;
-              const i2 = (i0 + 2) % 3;
-              ctx.moveTo(triCoords[base + i0 * 2],     triCoords[base + i0 * 2 + 1]);
-              ctx.lineTo(triCoords[base + i1 * 2],     triCoords[base + i1 * 2 + 1]);
-              ctx.lineTo(triCoords[base + i2 * 2],     triCoords[base + i2 * 2 + 1]);
-              ctx.closePath();
-            }
-            ctx.fillStyle = variedOld;
-            ctx.fill();
-            ctx.strokeStyle = creaseColor(variedOld);
-            ctx.stroke();
-          }
-
-          // Pass 2: draw flaps individually (unique shape per frame)
+          // Draw flaps individually (unique shape per frame, can't batch)
           if (iterSet) {
             for (const i of iterSet) {
               const anim = animStates[i];
