@@ -113,20 +113,47 @@ export function buildCascadeScheduleFlat(
 
   _flatLen = tail; // number of triangles visited
 
-  // Compute eased start times (inline of applyVariableCascadeEasing)
-  const totalDuration = maxDist * cascadeDelay;
-  const avgHopMs   = maxDist > 0 ? totalDuration / maxDist : 0;
-  const jitterRange = avgHopMs * 0.35;
+  // Compute start times with wave acceleration:
+  //   - Starts at 1× speed (full cascadeDelay per hop)
+  //   - Gradually ramps to 2× speed (half cascadeDelay per hop)
+  //   - Stays at 2× for the remainder
+  //
+  // The acceleration ramp covers the first 40% of hops, then locks at 2× speed.
+  // This gives the cascade a slow, deliberate start that builds momentum.
+  //
+  // Math: integrate a linearly decreasing delay from cascadeDelay down to
+  // cascadeDelay/2 over the ramp, then constant cascadeDelay/2 after that.
+  const rampFrac = 0.4; // first 40% of hops accelerate
+  const rampDist = maxDist * rampFrac;
+  const minDelay = cascadeDelay * 0.5; // 2× speed
+
+  // Pre-compute the total time spent in the ramp phase:
+  // Integral of delay(d) from 0 to rampDist where delay linearly drops
+  // from cascadeDelay to minDelay: avg delay × rampDist
+  const rampTime = (cascadeDelay + minDelay) * 0.5 * rampDist;
+
+  const jitterRange = cascadeDelay * 0.25;
   let maxStartTime = 0;
 
   for (let i = 0; i < _flatLen; i++) {
-    const dist = _qDist[i]; // reuse queue dist (order matches)
+    const dist = _qDist[i];
     if (dist === 0) {
       _schedStart[i] = 0;
       continue;
     }
-    const t      = dist / maxDist;
-    const base   = t * totalDuration;
+
+    let base: number;
+    if (dist <= rampDist) {
+      // In ramp: delay decreases linearly from cascadeDelay to minDelay
+      // Integral from 0 to dist of (cascadeDelay - (cascadeDelay - minDelay) * d / rampDist)
+      const frac = dist / rampDist; // 0→1 within ramp
+      const avgDelay = cascadeDelay - (cascadeDelay - minDelay) * frac * 0.5;
+      base = avgDelay * dist;
+    } else {
+      // Past ramp: constant minDelay (2× speed)
+      base = rampTime + (dist - rampDist) * minDelay;
+    }
+
     const jitter = Math.random() * jitterRange;
     const st     = base + jitter;
     _schedStart[i] = st;
