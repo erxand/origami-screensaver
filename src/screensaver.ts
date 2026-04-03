@@ -5,7 +5,7 @@
 import { createGrid, buildAdjacency } from './grid.js';
 import { createRenderer } from './renderer.js';
 import { createPaletteCycler } from './palette.js';
-import { createAnimStates, startFold, updateAnim, resetAnim, findFoldEdge, findEdgeFoldEdge, State } from './animator.js';
+import { createAnimStates, startFold, updateAnim, resetAnim, findFoldEdge, State } from './animator.js';
 import { buildCascadeScheduleFlat } from './cascade.js';
 import type { AnimState, RenderAnimState, GridResult, Triangle, ScreensaverOptions } from './types.js';
 
