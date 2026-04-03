@@ -497,7 +497,9 @@ export function createRenderer(ctx: CanvasRenderingContext2D, triCoords?: Float3
     sc.clip();
 
     // --- Batch by color: group triangle indices by variedColor ---
-    _rebuildBuckets.clear();
+    // Truncate existing bucket arrays in-place (like _patchBuckets) instead of .clear() —
+    // avoids dropping the arrays for GC then reallocating them on the next rebuild.
+    for (const bucket of _rebuildBuckets.values()) bucket.length = 0;
 
     if (triCoords) {
       for (let i = 0; i < triangles.length; i++) {

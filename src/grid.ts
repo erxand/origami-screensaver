@@ -20,9 +20,15 @@ export function createGrid(canvasWidth: number, canvasHeight: number, side = 70)
   const h = (side * SQRT3) / 2; // triangle height
   const halfSide = side / 2;
 
-  // How many rows / cols do we need to cover the canvas (with overflow)?
-  const rows = Math.ceil(canvasHeight / h) + 1;
-  const cols = Math.ceil(canvasWidth / halfSide) + 1;
+  // Overflow: add extra rows/cols so the zigzag edges are off-screen on all sides.
+  // The grid starts at (-halfSide, -h) so the left/top zigzag is hidden.
+  const OVERFLOW = 4; // extra columns/rows per side — enough to hide zigzag on all edges
+  const rows = Math.ceil(canvasHeight / h) + 1 + OVERFLOW * 2;
+  const cols = Math.ceil(canvasWidth / halfSide) + 1 + OVERFLOW * 2;
+
+  // Offset so the grid starts off-screen (zigzag edges hidden)
+  const offsetX = -OVERFLOW * halfSide;
+  const offsetY = -OVERFLOW * h;
 
   const triangles: Triangle[] = [];
   const triCoords = new Float32Array(rows * cols * 6); // [x0,y0,x1,y1,x2,y2,...], stride 6
@@ -31,6 +37,11 @@ export function createGrid(canvasWidth: number, canvasHeight: number, side = 70)
     for (let col = 0; col < cols; col++) {
       const up = (row + col) % 2 === 0; // alternating up/down
       const points = triangleVertices(row, col, halfSide, h, up);
+      // Shift all vertices so grid overflows past viewport edges
+      for (const pt of points) {
+        pt[0] += offsetX;
+        pt[1] += offsetY;
+      }
       const cx = (points[0][0] + points[1][0] + points[2][0]) / 3;
       const cy = (points[0][1] + points[1][1] + points[2][1]) / 3;
       const idx = (row * cols + col) * 6;
