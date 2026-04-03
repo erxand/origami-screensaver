@@ -14,9 +14,9 @@ describe('parseConfig', () => {
     });
   });
 
-  it('parses palette=ocean → paletteIdx 1', () => {
+  it('parses palette=ocean → paletteIdx 0', () => {
     const cfg = parseConfig('?palette=ocean');
-    expect(cfg.paletteIdx).toBe(1);
+    expect(cfg.paletteIdx).toBe(0);
   });
 
   it('parses palette=ember → paletteIdx 2', () => {
@@ -108,7 +108,7 @@ describe('parseConfig', () => {
 
   it('parses combined params', () => {
     const cfg = parseConfig('?palette=ocean&speed=1.5&size=80&cascades=1&wait=5000&density=2000');
-    expect(cfg.paletteIdx).toBe(1);
+    expect(cfg.paletteIdx).toBe(0);
     expect(cfg.foldDuration).toBe(Math.round(400 / 1.5));
     expect(cfg.side).toBe(80);
     expect(cfg.maxConcurrent).toBe(1);
@@ -125,7 +125,7 @@ describe('buildConfigUrl', () => {
 
   it('encodes non-default palette', () => {
     const url = buildConfigUrl({ paletteIdx: 1, foldDuration: 400, side: 0, density: 500, maxConcurrent: 2, waitTime: 8000 });
-    expect(url).toContain('palette=ocean');
+    expect(url).toContain('palette=sakura');
   });
 
   it('encodes speed when foldDuration is non-default', () => {
