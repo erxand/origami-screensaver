@@ -10,7 +10,7 @@ A high-performance animated screensaver inspired by [Kami 2](https://apps.apple.
 - **Fluid fold animation** — cubic ease-in-out with spring overshoot, feels like real paper
 - **Cascade propagation** — BFS flood-fill with smooth per-triangle stagger (not discrete waves)
 - **Paper texture** — pre-generated noise + fiber pattern composited over each triangle
-- **3 built-in palettes** — Sakura (warm pinks), Ocean (deep teals), Ember (burnt orange)
+- **4 built-in palettes** — Sakura (warm pinks), Ocean (deep teals), Ember (burnt orange), Forest (earthy greens)
 - **60fps target** — dirty-flag rendering skips unchanged triangles, no allocations in hot path
 - **Lightweight** — no frameworks, pure HTML5 Canvas + vanilla JS
 
@@ -124,7 +124,7 @@ npm run build      # Production build
 
 ## Tests
 
-147 tests across 9 test files:
+148 tests across 9 test files:
 
 | File | Tests | Covers |
 |------|-------|--------|
@@ -145,6 +145,7 @@ npm run build      # Production build
 | **Sakura** | Pinks, creams, soft whites | Warm, Japanese paper |
 | **Ocean** | Navy, teal, seafoam, pale blue | Cool, deep water |
 | **Ember** | Burnt orange, rust, charcoal | Warm, fire |
+| **Forest** | Deep green, sage, mint | Earthy, natural |
 
 Press `P` to cycle palettes with a HUD overlay.
 
@@ -170,6 +171,8 @@ Press `P` to cycle palettes with a HUD overlay.
 
 - ✅ **Zero-alloc folding triangle draw** — new `drawFoldingTriangleRaw(x0,y0,x1,y1,x2,y2,...)` variant accepts flat scalar coords; static-cache hot path calls it directly from `Float32Array triCoords` with no intermediate `pts` array; eliminates 4 array allocations per animating triangle per frame (~72K allocs/sec removed at 300 animating × 60fps); `Array.from(foldingIndices)` replaced with direct `for...of` Set iteration (1 fewer array per frame during cascades); typed-array speedup improved from **1.33× → 1.36×**
 
+- ✅ **Zero-alloc startCascade** — reuses module-level `Uint8Array` scratch buffer for `inCascade` tracking instead of allocating `new Uint8Array(N)` per cascade; eliminates per-triangle `validFromNeighbors[]` temporary array by counting valid neighbors first then picking randomly with a second pass; at 3000 triangles with cascades every 500ms, removes ~6KB + ~3000 small array allocations per cascade start
+
 - ✅ **Typed-array triangle coords** — `Float32Array triCoords` (stride 6) stores all vertex data contiguously in `GridResult`; render/patch loops read from buffer instead of `triangle.points[i][j]` nested arrays; inline idle-triangle draw eliminates `tracePath()` call + pts allocation per triangle; measured **1.32× speedup** in the render loop at 3000 triangles (168µs vs 222µs/frame)
 
 - ✅ **Active-set tick scan O(K)** — `foldingSet: Set<number>` tracks which triangles are in FOLDING state; tick loop + renderAnims build iterate only K animating indices instead of all N; renderer's `renderFrame` accepts optional `foldingIndices` for the same O(K) draw pass; eliminates N−K null-checks per frame during cascades; 3 new renderer tests (143 total)
@@ -194,7 +197,7 @@ Press `P` to cycle palettes with a HUD overlay.
 - ✅ Paper texture — pre-generated noise + multi-angle fibers matching equilateral grain
 - ✅ Paper depth shading — diagonal gradient + thin crease stroke per triangle
 - ✅ **Kami 2-style rendering** — color-relative edge creases (18% darker, near-invisible within same-color regions) + stable per-triangle lightness variation (±8%, seeded from index via Knuth hash, not orientation-based); 127 tests
-- ✅ 3 built-in palettes (Sakura, Ocean, Ember)
+- ✅ 4 built-in palettes (Sakura, Ocean, Ember, Forest)
 - ✅ Palette picker overlay (press `P`)
 - ✅ Multiple simultaneous cascades (up to 2 overlapping waves)
 - ✅ Performance benchmarking (`npm run benchmark`) — headless, reports FPS + bottlenecks + idle-frame cost
