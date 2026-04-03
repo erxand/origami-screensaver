@@ -216,6 +216,10 @@ export function createScreensaver(canvas: HTMLCanvasElement, options: Screensave
     dirty = true;
     activeCascades.push({ schedule: [], startTime: now, newColor, maxScheduleStart: flat.maxStartTime });
     currentColor = newColor;
+    // Invalidate static cache at cascade start so the background fill in the next rebuild
+    // uses the new color instead of the stale previous color — prevents edge-gap color bleed
+    // from old palette colors showing through at the viewport boundary during the cascade.
+    renderer.invalidateStaticCache();
   }
 
   function drawPaletteOverlay(text: string): void {

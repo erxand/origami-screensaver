@@ -150,7 +150,8 @@ describe('createRenderer', () => {
     ];
     const colors = ['#aaa', '#bbb'];
     r.renderFrame(triangles, colors, null);
-    expect(ctx.clearRect).toHaveBeenCalledTimes(1);
+    // Since the black-background fix, fallback clear always uses fillRect (never clearRect)
+    expect(ctx.fillRect).toHaveBeenCalledTimes(1);
     // 2 triangles + 1 clip rect = 3 beginPath calls
     expect(ctx.beginPath).toHaveBeenCalledTimes(3);
   });

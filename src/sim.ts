@@ -37,6 +37,8 @@ export interface SimSnapshot {
   activeCascades: number;
   totalCascadesStarted: number;
   totalTrianglesFolded: number;
+  /** Number of unique colors across all triangles at snapshot time. */
+  uniqueColorCount: number;
 }
 
 interface ActiveCascade {
@@ -100,6 +102,9 @@ export function createSim(options: SimOptions = {}) {
       }
     }
 
+    // Count unique colors at this moment (for color-uniformity assertions)
+    const _uniqueColors = new Set(colors);
+
     return {
       now: Math.round(now),
       triangleCount: count,
@@ -110,6 +115,7 @@ export function createSim(options: SimOptions = {}) {
       activeCascades: activeCascades.length,
       totalCascadesStarted,
       totalTrianglesFolded,
+      uniqueColorCount: _uniqueColors.size,
     };
   }
 

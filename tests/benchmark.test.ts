@@ -10,6 +10,7 @@ function mockCtx() {
   return {
     canvas: { width: 800, height: 600 },
     clearRect: vi.fn(),
+    fillRect: vi.fn(),
     beginPath: vi.fn(),
     moveTo: vi.fn(),
     lineTo: vi.fn(),

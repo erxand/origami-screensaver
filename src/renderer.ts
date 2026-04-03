@@ -481,9 +481,15 @@ export function createRenderer(ctx: CanvasRenderingContext2D, triCoords?: Float3
       (window as any).__ssDebug2.rebuildColors = Array.from(uniqueColors);
     }
 
-    // Fill background — always black so edge gaps don't bleed a stale color
-    sc.fillStyle = '#000000';
-    sc.fillRect(0, 0, w, h);
+    // Fill background with current color — eliminates edge-gap color bleed.
+    // A full rebuild is triggered (invalidateStaticCache) whenever a cascade completes,
+    // so bgColor is always up-to-date when this runs (never stale).
+    if (bgColor) {
+      sc.fillStyle = bgColor;
+      sc.fillRect(0, 0, w, h);
+    } else {
+      sc.clearRect(0, 0, w, h);
+    }
 
     sc.save();
     sc.beginPath();
@@ -875,7 +881,7 @@ export function createRenderer(ctx: CanvasRenderingContext2D, triCoords?: Float3
         ctx.restore();
       } else {
         // --- Fallback: full redraw (test environment, no DOM) ---
-        this.clear('#000000');
+        this.clear(bgColor || '#000000');
         ctx.save();
         ctx.beginPath();
         ctx.rect(0, 0, w, h);

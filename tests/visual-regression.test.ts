@@ -137,8 +137,7 @@ describe('visual regression — color consistency after overlapping cascades', (
 
     // During every idle window, all triangles must share exactly one color
     for (const snap of idleSnaps) {
-      const uniqueColors = new Set(sim.colors);
-      // The colors array reflects state at the end of the run, so just check no stuck
+      expect(snap.uniqueColorCount).toBe(1);
       expect(snap.stuck).toHaveLength(0);
     }
 
